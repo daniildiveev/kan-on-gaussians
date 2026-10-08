@@ -1,0 +1,14 @@
+# Python 3.11+ (executed with Python 3.12).
+# Numerical versions used for the saved notebook outputs:
+torch==2.14.1
+numpy==2.3.5
+matplotlib==3.10.8
+
+# Notebook interface and Python kernel (not part of the model):
+jupyterlab>=4.4,<5
+ipykernel>=6.29,<8
+
+# CPU-only Linux/Windows installation, if desired:
+# pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cpu
+# pip install -r requirements.txt
+# No scipy, pykan, or external dataset is required.
