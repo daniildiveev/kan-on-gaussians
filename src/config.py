@@ -1,0 +1,44 @@
+"""Frozen study settings. The notebook records these before training."""
+
+FEATURES = 12
+SINGLE_KERNELS, PAIR_KERNELS = 4, 2
+MLP_WIDTH, MAX_PARAMETER_GAP = 24, 0.05
+SINGLE_CENTER_RANGE = (-1.5, 1.5)
+SINGLE_AMPLITUDE_SD, PAIR_AMPLITUDE_SD = 0.09, 0.035
+PAIR_CENTER_SD, PAIR_FACTOR_SD = 0.55, 0.08
+
+TASKS = ("sparse", "additive")
+MODELS = ("mgs_kan", "mlp")
+PLANTED_PAIRS = ((0, 1), (2, 3), (4, 5))
+ADDITIVE_FEATURES = (6, 7, 8)
+QUADRATIC_WEIGHT = 0.5
+# Substitute fixture. The separate proposal's numeric constants were unavailable.
+GAUSSIAN_CENTER = (0.3, -0.4)
+GAUSSIAN_AMPLITUDE = 1.7
+GAUSSIAN_ANGLE = 0.5235987755982988  # pi / 6, counterclockwise
+GAUSSIAN_EIGENVALUES = (4.0, 0.5)
+REFERENCE_SIZE, REFERENCE_SEED = 100_000, 101
+NOISE_SD = 0.1
+SPLIT_SIZES = (2048, 512, 2048)
+
+DATA_SEEDS = (2311, 2411, 2511)
+INIT_SEEDS = (71, 73, 79)
+DEV_DATA_SEED, DEV_INIT_SEED = 2211, 67
+PILOT_DATA_SEED, PILOT_INIT_SEED = 2111, 61
+BATCH_STREAM = 3079  # Separate RNG domain from parameter initialization.
+CHECK_SEED = 31415
+
+BATCH_SIZE, MAX_EPOCHS, VALIDATE_EVERY, PATIENCE = 128, 300, 1, 30
+LEARNING_RATES = (0.001, 0.003)
+REGULARIZATION = {"mgs_kan": (0.0001, 0.001), "mlp": (0.0, 0.001)}
+PILOT_SIZE, PILOT_EPOCHS, PILOT_LR, PILOT_MAX_RMSE = 32, 350, 0.01, 0.05
+
+SELECTION_FRACTION, SCORE_CHUNK = 0.05, 64
+DEVICE, THREADS = "cpu", 1
+
+# Independent extension. The same ten seeds are paired across all three tasks.
+FOLLOWUP_TASKS = ("sparse", "sparse_overlap", "additive")
+FOLLOWUP_DATA_SEEDS = (3301, 3307, 3313, 3319, 3323, 3329, 3331, 3343, 3347, 3359)
+FOLLOWUP_DEV_SEED, FOLLOWUP_WORKERS = 3203, 5
+OVERLAP_PAIRS = ((0, 2), (1, 5), (2, 4))
+RIDGE_WIDTH, OSCILLATION_RATE = 0.6, 2.0

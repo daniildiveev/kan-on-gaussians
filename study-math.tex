@@ -1,0 +1,579 @@
+% Standalone mathematical appendix. Compile with pdflatex (twice) or tectonic.
+% Scalar sources: study.ipynb and src/{config,data,models,experiment}.py.
+% Targeted fits: experiments/{pair_ablation,pair_confirmation}.py.
+% Geometry: experiments/geometry_{reference,benchmark,confirmation}.py.
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,booktabs,url}
+
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathcal{N}}
+\newcommand{\SPD}{\operatorname{SPD}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\sym}{\operatorname{sym}}
+\newcommand{\norm}[1]{\lVert #1\rVert}
+\newcommand{\setP}{\mathcal{P}}
+
+\title{Mathematical Appendix for the MGS-KAN Experiments}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+The scalar studies compare prediction of noisy targets, recovery of planted
+pair indices, and estimation of interaction surfaces. The Gaussian geometry
+benchmark predicts a bivariate distribution and reports its center and
+covariance errors. This appendix defines the quantities used in
+\path{study.ipynb} and the experimental report.
+
+\section{Scalar data generation}
+
+An observation has raw features \(X=(X_0,\ldots,X_{11})^\top\) with independent
+\(X_i\sim\N(0,1)\). The three shared additive components are
+\[
+ A(x)=\bigl(\sin x_6,\ \tfrac12(x_7^2-1),\ \tanh x_8\bigr).
+\]
+The following ordered component lists define the tasks. Concatenation with
+\(A(x)\) retains its three entries.
+\begin{align*}
+ h_{\rm additive}(x) &= A(x),\\
+ h_{\rm sparse}(x) &=
+ \bigl(A(x),\ x_0x_1,\ \sin(x_2x_3),\ g_{\rm rot}(x_4,x_5)\bigr),\\
+ h_{\rm overlap}(x) &=
+ \biggl(A(x),\ \tanh x_0\,\tanh x_2,\
+ \exp\!\left[-\tfrac12\left(\frac{x_1-x_5}{0.6}\right)^2\right],\
+ \sin(2x_2)\sin(2x_4)\biggr).
+\end{align*}
+The planted sets are \(\varnothing\), \(\{(0,1),(2,3),(4,5)\}\),
+and \(\{(0,2),(1,5),(2,4)\}\), respectively.
+
+For the rotated Gaussian, the recorded substitute fixture uses
+\(c=(0.3,-0.4)^\top\), amplitude \(1.7\),
+\(\phi=\pi/6\), and principal precisions \(4\) and \(0.5\). Define
+\begin{equation}
+ R_\phi=\begin{pmatrix}\cos\phi&-\sin\phi\\\sin\phi&\cos\phi\end{pmatrix},
+ \qquad P_\star=R_\phi\operatorname{diag}(4,0.5)R_\phi^\top .
+ \label{eq:rotation}
+\end{equation}
+For \(d=(u,v)^\top-c\), the principal coordinates are \(q=R_\phi^\top d\).
+Thus \(g_{\rm rot}(u,v)=1.7\exp[-(4q_1^2+0.5q_2^2)/2]\).
+
+A separate reference sample of \(N_\star=100{,}000\) rows from NumPy's
+\path{default_rng(101)}
+sets the component statistics and the final target scale. Write
+\(\E_\star\) for the reference sample average and \(t\) for the task:
+\begin{align}
+ m_{t,k}&=\E_\star[h_{t,k}(X)],&
+ s_{t,k}^2&=\E_\star[(h_{t,k}(X)-m_{t,k})^2],\nonumber\\
+ S_t(x)&=\sum_k \frac{h_{t,k}(x)-m_{t,k}}{s_{t,k}},&
+ M_t&=\E_\star[S_t(X)],\qquad
+ D_t^2=\E_\star[(S_t(X)-M_t)^2],\nonumber\\
+ f_t(x)&=\frac{S_t(x)-M_t}{D_t},&
+ Y_t&=f_t(X)+\varepsilon,\qquad
+ \varepsilon\sim\N(0,0.1^2),\quad \varepsilon\perp X.
+ \label{eq:target}
+\end{align}
+The components have equal weights after their individual standardization.
+The normalization in \eqref{eq:target} gives the clean signal unit variance
+on the reference sample, including when components share an input.
+
+Each data seed supplies \(2048/512/2048\) train, validation, and test rows.
+The tasks reuse the same raw inputs and noise draws within a data seed.
+Models share the resulting split, observed targets, and example order.
+For each feature, the model coordinate is
+\[
+ z_i=\frac{x_i-\widehat\mu_i}{\widehat\sigma_i},\qquad
+ \widehat\mu_i=\frac{1}{n_{\rm tr}}\sum_{r\in{\rm tr}}x_{ri},\qquad
+ \widehat\sigma_i^2=\frac{1}{n_{\rm tr}}\sum_{r\in{\rm tr}}
+                    (x_{ri}-\widehat\mu_i)^2 .
+\]
+These scaling constants are fitted on the training rows and reused on the
+other splits. The clean target and its components are available to the
+evaluator.
+
+\section{Scalar models and training}
+
+Let \(\setP_d=\{(i,j):0\le i<j<d\}\) in lexicographic order.
+The scalar MGS-KAN prediction decomposes as
+\begin{align}
+ \widehat y(z)
+ &= b+w^\top z+\sum_{i=0}^{11}h_i(z_i)
+      +\sum_{(i,j)\in\setP_{12}} g_{ij}(z_i,z_j),\label{eq:mgs}\\
+ h_i(u)&=\sum_{k=1}^4 a_{ik}\exp[-p_{ik}(u-c_{ik})^2/2],
+ \qquad p_{ik}=\exp(2\ell_{ik}),\nonumber\\
+ g_{ij}(u,v)&=\sum_{k=1}^{K_{ij}} a_{ijk}
+   \exp[-d_{ijk}^\top P_{ijk}d_{ijk}/2],
+ \qquad d_{ijk}=(u,v)^\top-c_{ijk}.\nonumber
+\end{align}
+For every bivariate kernel, omitting indices, the implementation uses
+\begin{equation}
+ L=\begin{pmatrix}e^\alpha&0\\\beta&e^\gamma\end{pmatrix},
+ \qquad P=LL^\top,\qquad
+ d^\top P d=(e^\alpha d_1+\beta d_2)^2+(e^\gamma d_2)^2 .
+ \label{eq:precision}
+\end{equation}
+The diagonal of \(L\) is positive, so \(L\) is invertible and
+\(\norm{L^\top d}_2^2>0\) for \(d\ne 0\). The off-diagonal parameter
+\(\beta\) allows the mixed term in the quadratic form.
+
+Each of the \(66\) pairs has \(K_{ij}=2\) kernels in the baseline. A
+univariate kernel uses one amplitude, one center and one log scale.
+A bivariate kernel uses one amplitude, two center coordinates and three
+precision-factor parameters. The counts are
+\begin{align*}
+ P_{\rm MGS}&=(12+1)+12\cdot4\cdot3+66\cdot2\cdot6=949,\\
+ P_{\rm MLP}&=(12+1)24+(24+1)24+(24+1)=937,\\
+ \frac{|P_{\rm MGS}-P_{\rm MLP}|}{P_{\rm MGS}}&=\frac{12}{949}
+   \approx 1.26\% \le 5\%.
+\end{align*}
+The MLP is \(W_3\rho(W_2\rho(W_1z+b_1)+b_2)+b_3\), with both hidden widths
+equal to \(24\) and \(\rho(u)=\max(u,0)\) elementwise.
+
+For a minibatch \(B\), write
+\(L_B(\theta)=|B|^{-1}\sum_{r\in B}(\widehat y_\theta(z_r)-y_r)^2\).
+The MGS-KAN batch objective and the equivalent coupled weight-decay
+objective for the MLP are
+\begin{align}
+ L_B^{\rm MGS}(\theta)
+   &=L_B(\theta)+\lambda \sum_{(i,j)\in\setP_{12}}
+           \norm{(a_{ijk})_{k=1}^{K_{ij}}}_2,\label{eq:penalty}\\
+ L_B^{\rm MLP}(\theta)
+   &=L_B(\theta)+\tfrac12\lambda_{\rm wd}\norm{\theta}_2^2.\nonumber
+\end{align}
+All candidate pairs can learn. The penalty acts on each complete amplitude
+group in \eqref{eq:penalty}. For a nonzero group \(a\), its penalty gradient
+is \(\lambda a/\norm{a}_2\).
+
+Standard fits use Adam, batch size \(128\), and shuffled batches each epoch.
+Validation occurs every epoch. For a split \(D\), define
+\begin{equation}
+ R_D(\theta)=
+ \sqrt{\frac{1}{|D|}\sum_{r\in D}(\widehat y_\theta(z_r)-y_r)^2}.
+ \label{eq:rmse}
+\end{equation}
+The selected epoch minimizes validation \(R_D\) among the evaluated
+epochs, breaking ties at the earliest epoch. Training ends after
+\(30\) epochs without improvement or \(300\) epochs in total.
+The four development trials cross learning rates \(\{0.001,0.003\}\)
+with MGS-KAN penalties \(\{10^{-4},10^{-3}\}\) or MLP weight decays
+\(\{0,10^{-3}\}\). The task-specific choice minimizes validation RMSE.
+The development seeds are \(2211\) for the original tasks and \(3203\)
+for the second sparse target.
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Task & MGS-KAN \((\eta,\lambda)\) & MLP \((\eta,\lambda_{\rm wd})\)\\
+\midrule
+Original sparse & \((0.003,0.001)\) & \((0.003,0.001)\)\\
+Additive control & \((0.003,0.001)\) & \((0.001,0.001)\)\\
+Second sparse & \((0.001,0.001)\) & \((0.003,0)\)\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Numerical checks.}
+The decomposition in \eqref{eq:mgs} reconstructs the forward result.
+The float64 fixture checks all \(66\) pairs, symmetry and positive
+eigenvalues of \(P\), and autograd against numerical derivatives for
+inputs and parameters. For a scalar argument \(a\), the derivative used
+in the numerical comparison is the centered difference
+\([F(a+\delta)-F(a-\delta)]/(2\delta)\). A single nonzero kernel with
+\(LL^\top=P_\star\) from \eqref{eq:rotation} must match evaluation in
+the rotated coordinates, including off-axis displacements, with maximum
+absolute error below \(10^{-10}\). A separate noiseless pilot uses \(32\)
+rows, no regularization and a budget of \(350\) epochs. Its training
+RMSE must be below \(0.05\) in unit-signal coordinates.
+
+\section{Scalar prediction and recovery}
+
+\subsection{Paired held-out prediction}
+
+Let \(R_{m,s,r}\) denote test RMSE for model \(m\), data seed \(s\), and
+initialization \(r\). With \(\mathcal I=\{71,73,79\}\) and data seeds
+\(\mathcal S\), define
+\begin{equation}
+ \overline R_{m,s}=\frac{1}{|\mathcal I|}\sum_{r\in\mathcal I} R_{m,s,r},
+ \qquad
+ \Delta_s=\overline R_{{\rm MGS},s}-\overline R_{{\rm MLP},s},
+ \qquad
+ \overline\Delta=\frac{1}{|\mathcal S|}\sum_{s\in\mathcal S}\Delta_s .
+ \label{eq:pair-average}
+\end{equation}
+A negative difference favors MGS-KAN. RMSE is computed per fit before the
+averaging in \eqref{eq:pair-average}. The independent unit is the data seed.
+When reported, relative reduction is \(1-\overline R_{\rm new}/\overline
+R_{\rm ref}\), using the seed-averaged errors.
+
+\subsection{Support recovery from validation marginals}
+
+Fix a learned pair \(g_{ij}\) and the \(n_{\rm val}\) validation rows.
+Let \(u_r=z_{ri}\), \(v_r=z_{rj}\), and
+\(G_{rs}=g_{ij}(u_r,v_s)\). The empirical double-centering operator gives
+\begin{align}
+ \widetilde G_{rs}
+ &= G_{rs}-\frac1n\sum_b G_{rb}-\frac1n\sum_a G_{as}
+          +\frac1{n^2}\sum_{a,b}G_{ab},\qquad n=n_{\rm val},\nonumber\\
+ S_{ij}&=\left(\frac1n\sum_{r=1}^n\widetilde G_{rr}^2\right)^{1/2},
+ \qquad
+ \widehat{\setP}
+   =\{(i,j): S_{ij}>0.05\,\widehat\sigma_{Y,{\rm tr}}\}.
+ \label{eq:validation-recovery}
+\end{align}
+The training-target standard deviation \(\widehat\sigma_{Y,{\rm tr}}\)
+uses the noisy targets with divisor \(n_{\rm tr}\). The score and the
+cutoff both have target units. The Cartesian product sets the marginal
+means, while the diagonal evaluates the centered term on observed
+validation pairs. If \(G_{rs}=a(u_r)+b(v_s)+c\), then
+\(\widetilde G_{rs}=0\). If \(G_{rs}=u_rv_s\), then
+\(\widetilde G_{rs}=(u_r-\bar u)(v_s-\bar v)\).
+
+Pairs are ranked by descending \(S_{ij}\) with lexicographic tie-breaking.
+If \(\setP_\star\) is the planted set, the reported top-three count is
+\(\lvert\setP_\star\cap\operatorname{Top}_3(S)\rvert\).
+Exact support recovery is \(\widehat{\setP}=\setP_\star\).
+For the additive control, \(\lvert\widehat{\setP}\rvert\) counts false
+selections.
+
+\subsection{Population interaction shape error}
+
+Here \(X\sim\N(0,I_{12})\) in raw coordinates. For a prediction function on
+those coordinates \(F(x)=\widehat y(z(x))\), let
+\(F_0=\E[F(X)]\) and \(F_i(u)=\E[F(X)\mid X_i=u]-F_0\).
+The pure pair projection is
+\begin{equation}
+ F_{ij}(u,v)=\E[F(X)\mid X_i=u,X_j=v]-F_i(u)-F_j(v)-F_0 .
+ \label{eq:conditional-projection}
+\end{equation}
+For a bivariate function \(b(u,v)\) and independent \(U,V\sim\N(0,1)\),
+define
+\[
+ \mathcal C b(u,v)= b(u,v)-\E[b(u,V)]-\E[b(U,v)]+\E[b(U,V)] .
+\]
+For MGS-KAN the pair projection is exactly
+\(\mathcal C[g_{ij}(z_i(\cdot),z_j(\cdot))]\), because conditional
+expectations of other model terms contribute only constants and main
+effects on these coordinates. For the MLP, \eqref{eq:conditional-projection}
+uses its full prediction averaged over the remaining coordinates.
+For the planted signal \(f_t\), the projected pair is the double-centered
+version of its corresponding component divided by \(s_{t,k}D_t\).
+For example, the oscillatory term on \((2,4)\) has zero population
+marginal means by odd symmetry, giving
+\[
+ (f_{\rm overlap})_{24}(u,v)
+   =\frac{\sin(2u)\sin(2v)}{s_{{\rm overlap},6}D_{\rm overlap}},
+\]
+where the component index \(k\) starts at one.
+The constant subtracted in \eqref{eq:target} vanishes under projection.
+
+For \(H\)-node Gauss--Hermite quadrature with nodes \(\xi_a\) and
+weights \(\omega_a\) for \(e^{-x^2}\), the standard-normal nodes and
+weights are \(x_a=\sqrt{2}\xi_a\) and \(w_a=\omega_a/\sqrt{\pi}\).
+For a matrix \(B_{ab}=b(x_a,x_b)\), the discretization is
+\begin{align}
+ (\mathcal C_wB)_{ab}
+   &=B_{ab}-\sum_\ell w_\ell B_{a\ell}
+           -\sum_\ell w_\ell B_{\ell b}
+           +\sum_{k,\ell}w_kw_\ell B_{k\ell},\nonumber\\
+ \operatorname{PairMSE}_{ij}
+   &=\E[(F_{ij}(U,V)-(f_t)_{ij}(U,V))^2]\nonumber\\
+   &\approx \sum_{a,b}w_aw_b
+      \bigl(F_{ij}(x_a,x_b)-(f_t)_{ij}(x_a,x_b)\bigr)^2 .
+ \label{eq:pair-mse}
+\end{align}
+The primary diagnostic uses \(H=40\) and \(2^8\) common scrambled Sobol
+background draws transformed by the standard-normal inverse CDF. The
+finer check uses \(H=64\) and \(2^9\) backgrounds. Model inputs are
+rescaled with each fit's training statistics before prediction. Shape
+MSE has squared target units and uses a fixed product measure. The
+validation RMS in \eqref{eq:validation-recovery} measures effect size.
+
+\subsection{Noiseless error decomposition}
+
+For \(e(x)=F(x)-f_t(x)\), let \(b=\E[e(X)]\) and
+\(e_i(u)=\E[e(X)\mid X_i=u]-b\). Under the independent input measure,
+constants, different centered main effects, and different pure pair
+projections are mutually orthogonal in \(L^2\). For example, two pairs
+sharing one feature have zero inner product because integrating a
+nonshared coordinate gives zero. Consequently
+\[
+ \E[e(X)^2]
+ =b^2+\sum_{i=0}^{11}\E[e_i(X_i)^2]
+    +\sum_{(i,j)\in\setP_\star}\operatorname{PairMSE}_{ij} + E_{\rm rem}.
+\]
+The population remainder is the squared norm of components outside the
+reported projections. The notebook estimates the total and bias on an
+independent \(2^{15}\)-point scrambled Sobol draw, and computes the
+numerical remainder by subtraction. Its value can include numerical
+integration error. The population noisy MSE equals
+\(\E[e(X)^2]+0.1^2\) by independence. On a finite test set the difference
+between noisy and clean MSE also includes the empirical cross term
+\(-2|D|^{-1}\sum_{r\in D}e(x_r)\varepsilon_r\).
+
+\subsection{Targeted capacity experiment}
+
+The expanded model has \(K_{24}=8\) and \(K_{ij}=2\) for every other
+pair. Its six extra kernels start with zero amplitude and join the same
+group in \eqref{eq:penalty}, so the initial prediction is unchanged.
+The trainable count is \(949+6\cdot6=985\).
+
+The crossed fit grid is
+\[
+ \mathcal H=\{2,8\}\times\{0.001,0.003\}\times\{0.001,0\},
+\]
+in the order kernel count, learning rate, and pair penalty.
+For a factor \(k\), an endpoint and a metric \(M\), the matched effect
+within a block \((s,r,h_{-k})\) is
+\[
+ \delta_k(s,r,h_{-k})
+    =M(s,r,h_{-k},h_k^{\rm alternate})
+     -M(s,r,h_{-k},h_k^{\rm original}).
+\]
+The report averages these differences over the \(3\cdot3\cdot4=36\)
+matched blocks. One endpoint selects by validation with the usual
+patience, and the other uses the checkpoint at epoch \(300\) for all
+settings. The confirmation fixes the expanded arm at \((8,0.003,0.001)\)
+and evaluates seeds \(4101\) through \(4110\). It compares
+\(\operatorname{PairMSE}_{24}\) and whole-model \(R_D\) separately.
+
+\section{Gaussian geometry benchmark}
+
+\subsection{States, sampling, and metric}
+
+A state is \(G=(\mu,C)\), with \(\mu\in\R^2\) and \(C\in\SPD(2)\).
+Two input states are sampled independently. Per state, the center is
+\(0.8\,Z\) with \(Z\sim\N(0,I_2)\), the angle \(\phi\) is uniform on
+\([0,2\pi)\), and log standard deviations \(l\sim\N(0,0.35^2 I_2)\)
+give \(C=R_\phi\operatorname{diag}(e^{2l_1},e^{2l_2})R_\phi^\top\).
+The three draws are independent. The center shift maps
+\(\mu\mapsto 1.8\mu+(1,-0.6)^\top\). The covariance shift maps
+\(l\mapsto l+(0.5,-0.5)^\top\). Shifted test variants share the same
+base draws with the unshifted redraw.
+
+For another state \(H=(\nu,D)\), the prediction metric is
+\begin{align}
+ W_2^2(G,H)&=\norm{\mu-\nu}_2^2+d_{\rm BW}^2(C,D),\label{eq:w2}\\
+ d_{\rm BW}^2(C,D)&=\tr C+\tr D-2\tr\bigl[(C^{1/2}DC^{1/2})^{1/2}\bigr].
+ \nonumber
+\end{align}
+Matrix square roots are the positive definite ones. For independent
+verification in dimension two, \(\tr(M^{1/2})=(\tr M+2\sqrt{\det
+M})^{1/2}\) for \(M\in\SPD(2)\), since the two roots of the eigenvalues
+sum to this expression. With \(M=C^{1/2}DC^{1/2}\), this gives
+\begin{equation}
+ d_{\rm BW}^2(C,D)=
+ \tr C+\tr D-2\sqrt{\tr(CD)+2\sqrt{\det C\,\det D}} .
+ \label{eq:w2-det}
+\end{equation}
+The implementation clamps small negative covariance errors caused by
+roundoff to zero. Split scores average \(W_2^2\) and each component over
+rows. The paired analysis then averages three training initializations
+within each data seed, as in \eqref{eq:pair-average} with \(W_2^2\) in
+place of RMSE.
+
+\subsection{Three target maps}
+
+For inputs \(G_i=(\mu_i,C_i)\), \(i=0,1\), write
+\(\bar\mu=(\mu_0+\mu_1)/2\) and \(\bar C=(C_0+C_1)/2\).
+
+\paragraph{Affine.}
+For \(A=\left(\begin{smallmatrix}1.1&0.15\\0.15&0.85\end{smallmatrix}\right)\)
+and \(b=(0.25,-0.15)^\top\), the target is
+\[
+ G_{\rm aff}=(A\bar\mu+b,\ A\bar C A^\top).
+\]
+
+\paragraph{Geodesic.}
+The optimal transport matrix from \(C_0\) to \(C_1\) and the
+interpolating covariance are \cite{bhatia2019}
+\begin{align}
+ T&=C_0^{-1/2}(C_0^{1/2}C_1C_0^{1/2})^{1/2}C_0^{-1/2},
+       &T C_0T^\top&=C_1,\nonumber\\
+ A_t&=(1-t)I+tT,& C_t&=A_t C_0 A_t^\top,\label{eq:geodesic}\\
+ G_t&=((1-t)\mu_0+t\mu_1,\ C_t),& t&=0.35.\nonumber
+\end{align}
+Expanding the congruence in \eqref{eq:geodesic} gives
+\begin{equation}
+ (1-t)C_0+tC_1-C_t
+    =t(1-t)(I-T)C_0(I-T)^\top\succeq 0 .
+ \label{eq:arithmetic-gap}
+\end{equation}
+Even with the correct interpolation weights, an arithmetic covariance
+average omits the transport correction. The benchmark MGS-KAN starts
+from the equal-weight arithmetic average.
+
+\paragraph{Nonlinear.}
+Write \(u=(u_1,u_2)^\top=\mu_0\) and \(v=(v_1,v_2)^\top=\mu_1\).
+Define
+\[
+ \delta(u,v)=\begin{pmatrix}0.35\sin(u_1v_2)\\0.30\tanh(u_2+v_1)\end{pmatrix},
+ \qquad
+ S(u,v)=\begin{pmatrix}
+ 0.18\sin(u_1+v_1)&0.12\tanh(u_2v_2)\\
+ 0.12\tanh(u_2v_2)&-0.15\cos(u_2-v_1)
+ \end{pmatrix}.
+\]
+The target is \(G_{\rm nonlin}=(\bar\mu+\delta,\ e^S\bar C(e^S)^\top)\),
+where \(e^S\) is the matrix exponential.
+
+\subsection{Residual models for Gaussian states}
+
+If \(C=LL^\top\) is its Cholesky factorization with positive diagonal,
+define the encoding \(E\) and its inverse by
+\begin{align}
+ E(G)=(\mu_1,\mu_2,\log L_{11},L_{21},\log L_{22})^\top,\qquad
+ &K(p,q,r)=\begin{pmatrix}e^p&0\\q&e^r\end{pmatrix},\nonumber\\
+ E^{-1}(a_1,a_2,p,q,r)&=\bigl((a_1,a_2)^\top,\ K(p,q,r)K(p,q,r)^\top\bigr).
+ \label{eq:gaussian-code}
+\end{align}
+Both residual models use a ten-coordinate input and a five-coordinate
+output residual. With elementwise division by
+\(s=(1.5,1.5,0.7,0.7,0.7)^\top\), their common form is
+\[
+ z=\begin{pmatrix}\tanh(E(G_0)/s)\\\tanh(E(G_1)/s)\end{pmatrix},
+ \qquad
+ \widehat G=E^{-1}\bigl(E(\bar\mu,\bar C)+r_\theta(z)\bigr).
+\]
+A zero residual returns the arithmetic base, and the decoder produces an
+SPD covariance for finite coordinates in exact arithmetic.
+
+Geometry MGS-KAN uses \eqref{eq:mgs}--\eqref{eq:precision} with \(10\)
+input coordinates, \(3\) univariate kernels per coordinate, and \(5\)
+bivariate kernels per pair over all \(45\) pairs. Every kernel has a
+five-vector amplitude and a shared center and precision across the five
+outputs. Flat MLP uses the same base and decoder, with a
+\(10\to42\to42\to5\) network and two \(\tanh\) hidden activations.
+The counts are
+\begin{align*}
+ P_{\rm geo,MGS}
+   &=5(10+1)+10\cdot3(5+1+1)+45\cdot5(5+2+3)=2515,\\
+ P_{\rm Flat}
+   &=(10+1)42+(42+1)42+(42+1)5=2483.
+\end{align*}
+
+\subsection{Gaussian message models and aggregation}
+
+The five message models use layer widths \(2\to3\to1\), giving nine
+directed edges across the two layers. For the spline and MLP edge
+variants, each edge \(j\to i\) maps
+\(x=\tanh(E(G_j)/s)\) to \(q\in\R^5\). The messages are
+\begin{align*}
+ b&=(q_1,q_2)^\top,\qquad
+ (\sigma_1,\sigma_2,\sigma_3)^\top=0.6\tanh((q_3,q_4,q_5)^\top/0.6),\\
+ S&=\begin{pmatrix}\sigma_1&\sigma_2\\\sigma_2&\sigma_3\end{pmatrix},
+ \qquad
+ G_{ij}^{\rm msg}=(\mu_j+b,\ e^S C_j(e^S)^\top).
+\end{align*}
+The \(\tanh\) MLP edge is \(5\to25\to5\). A spline edge has
+\(q_r=b_r+\sum_{a=1}^{5}\sum_{k=1}^{11}c_{rak}B_{k,3}(x_a)\).
+The \(B_{k,3}\) are cubic B-splines on \([-1,1]\) with eight equal
+intervals and repeated end knots. For knots \(\tau_k\), the recursion is
+\[
+ B_{k,0}(x)=\mathbf{1}_{[\tau_k,\tau_{k+1})}(x),\qquad
+ B_{k,p}(x)=
+ \frac{x-\tau_k}{\tau_{k+p}-\tau_k}B_{k,p-1}(x)
+ +\frac{\tau_{k+p+1}-x}{\tau_{k+p+1}-\tau_{k+1}}B_{k+1,p-1}(x).
+\]
+Terms with zero denominator are set to zero. The coordinate spline and
+MLP edges each have \(280\) parameters per edge, hence \(2520\) per
+network. For Anchor / BW, each edge learns a state \(H\), a positive
+scale \(\tau\), and a scalar cubic spline \(g\) on \([0,1]\).
+Set \(r=W_2^2(G_j,H)/\tau^2\) and
+\(t=(1+\exp[-g(r/(1+r))])^{-1}\); the message is the geodesic
+interpolation from \(G_j\) to \(H\) at \(t\). With eleven coefficients
+and one spline bias plus five state parameters and one log scale,
+the count is \(9(11+1+5+1)=162\).
+
+For incoming messages \(G_j^{\rm msg}=(\nu_j,D_j)\), let \(w_j=1/m\)
+for \(m\) messages. Both aggregation rules use center \(\sum_jw_j\nu_j\).
+Arithmetic aggregation uses covariance \(\sum_jw_jD_j\). BW aggregation
+approximates the covariance barycenter
+\[
+ S_\star=\arg\min_{S\in\SPD(2)}\sum_j w_j d_{\rm BW}^2(S,D_j).
+\]
+Starting from \(S_0=\sum_jw_jD_j\), the benchmark applies twelve updates
+\begin{align*}
+ Q_\ell&=\sum_jw_j(S_\ell^{1/2}D_j S_\ell^{1/2})^{1/2},\\
+ S_{\ell+1}&=\sym(S_\ell^{-1/2}Q_\ell^2S_\ell^{-1/2}),\qquad
+ \sym(M)=(M+M^\top)/2 .
+\end{align*}
+The target in \eqref{eq:geodesic} is a weighted barycenter of the two
+original inputs. The trained BW network uses equal weights on its learned
+messages and learns their transformations.
+
+\subsection{Geometry training and interpretation}
+
+The batch objective is mean \(W_2^2\), with the additional penalty
+\(0.001\sum_{(i,j)\in\setP_{10}}\norm{A_{ij}}_{\rm F}\) for MGS-KAN,
+where \(A_{ij}\in\R^{5\times5}\) stacks the five kernel amplitude vectors
+for the pair. The benchmark uses float64 Adam, minibatches of \(64\)
+drawn with replacement, \(2000\) updates, gradient norm clipping at \(5\),
+and train, validation and test sizes \(256/128/256\). Validation is
+evaluated every \(10\) updates including step zero. The checkpoint is the
+earliest minimizer of unpenalized validation mean \(W_2^2\).
+For the batched Adam update, if \(g_t\) is the objective gradient at
+update \(t\), the clipped gradient is
+\(g'_t=g_t\min\{1,5/(\norm{g_t}_2+10^{-6})\}\).
+With moments initialized to zero, the update is
+\begin{align*}
+ m_t&=\beta_1m_{t-1}+(1-\beta_1)g'_t,&
+ v_t&=\beta_2v_{t-1}+(1-\beta_2)(g'_t)^2,\\
+ \theta_t&=\theta_{t-1}
+ -\eta\frac{m_t/(1-\beta_1^t)}
+             {\sqrt{v_t/(1-\beta_2^t)}+10^{-8}},
+ &(\beta_1,\beta_2)&=(0.9,0.999).
+\end{align*}
+The squares, square roots and divisions in the update are elementwise.
+Scalar training uses the same Adam moment constants without clipping.
+For the development selection, the score of a rate is the arithmetic
+mean of the two initialization-specific best validation scores. Ties
+favor the smaller rate.
+
+The historical and fresh comparisons use data seeds
+\(\{3000,4000,5000\}\) and \(\{6000,7000,8000\}\), respectively, with
+training seeds \(\{11,29,47\}\) per data split. The fresh comparison
+freezes the selected learning rates and pairs all seven models on the
+same data and minibatch draws.
+
+\begin{center}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Model & \multicolumn{3}{c}{Selected learning rate}\\
+\cmidrule(l){2-4}
+ & Affine & Geodesic & Nonlinear\\
+\midrule
+MGS-KAN          & 0.010 & 0.010 & 0.010\\
+Flat MLP         & 0.003 & 0.001 & 0.010\\
+Spline / mean    & 0.003 & 0.010 & 0.003\\
+Spline / BW      & 0.010 & 0.010 & 0.001\\
+MLP edges / mean & 0.010 & 0.010 & 0.010\\
+MLP edges / BW   & 0.003 & 0.010 & 0.010\\
+Anchor / BW      & 0.010 & 0.010 & 0.010\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The geodesic gap is measured by subtracting the two terms in
+\eqref{eq:w2} separately. For MGS-KAN minus MLP edges / BW on the fresh
+seeds, the mean center difference is \(-0.0000926\) and the covariance
+difference is \(+0.0013031\), for \(+0.0012105\) total \(W_2^2\) after
+rounding. The same MLP edge architecture with BW aggregation instead of
+arithmetic aggregation reduced geodesic covariance error from
+\(0.00100355\) to \(0.00002139\) at the same learning rate. Equation
+\eqref{eq:arithmetic-gap} describes the correction implied by the target.
+The aggregation comparison supports the geometric interpretation, and a
+matched change within MGS-KAN would isolate its contribution.
+
+\begin{thebibliography}{9}
+
+\bibitem{bhatia2019}
+R. Bhatia, T. Jain, and Y. Lim.
+On the Bures--Wasserstein distance between positive definite matrices.
+\emph{Expositiones Mathematicae}, 37(2), 165--191, 2019.
+\url{https://doi.org/10.1016/j.exmath.2018.01.002}.
+
+\end{thebibliography}
+
+\end{document}

@@ -1,0 +1,30 @@
+{
+  "status": "algebra checks only; no training",
+  "seed": 71026,
+  "python": "3.14.9 (main, Oct 25 2026, 14:52:47) [GCC 16.2.1 20260810]",
+  "platform": "Linux-6.18.60-1-lts-x86_64-with-glibc2.44",
+  "reachability_trials": 100,
+  "max_reachability_relative_error": 1.4494063362651953e-15,
+  "max_log_exp_relative_error": 4.372876637137207e-16,
+  "min_eigenvalue_lower_bound_slack": 1.9101247672348443e-05,
+  "euclidean_mean_max_abs_error": 3.1401849173675503e-16,
+  "euclidean_cov_max_relative_error": 3.7503562306787644e-16,
+  "permutation_max_error": 0.0,
+  "fixed_coordinate_S_rotation_defect": 0.3658894665308969,
+  "cycle_nodes": 16,
+  "cycle_radius_after_1": 0.9238795325112866,
+  "cycle_radius_expected": 0.9238795325112867,
+  "cycle_radius_after_32_expected": 0.07937633991236974,
+  "BW_iterations": 11,
+  "BW_stationarity_residual": 4.669270750557015e-14,
+  "min_eig_arithmetic_minus_BW": 0.05275777862226346,
+  "rotated_covariance_relative_error": 2.880332204206864e-16,
+  "material_rotation_point_gap": 0.2900566681233207,
+  "scalar_variance_example": {
+    "arithmetic": 5.0,
+    "BW": 4.0,
+    "log_euclidean": 3.0,
+    "precision_mean": 1.8
+  },
+  "assertions": "PASS"
+}

@@ -1,1 +1,6 @@
 .ipynb_checkpoints
+*/**/__pycache__/
+*.docx
+notes/
+outputs/
+gkan_results/
