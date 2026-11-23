@@ -1,5 +1,5 @@
 import csv
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import ClassVar, Self
 
@@ -44,7 +44,8 @@ class CsvDataset(TabularDataset):
             header, values = cls._read_csv(path)
             return cls._select_target(header, values, spec.target)
 
-        return cls._load_source(spec.filename, read, root=root, fold=fold, download=download)
+        data = cls._load_source(spec.filename, read, root=root, fold=fold, download=download)
+        return replace(data, target_column=spec.target)
 
     @staticmethod
     def _select_target(header: list[str], values: np.ndarray, target: str) -> Table:

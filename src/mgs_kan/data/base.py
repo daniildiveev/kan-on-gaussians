@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from hashlib import file_digest
 from inspect import isabstract
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -66,7 +67,11 @@ class TabularDataset(DatasetSplits, ABC):
     @classmethod
     def _load_file(cls, path: Path, read: Callable[[Path], Table], fold: int) -> Self:
         features, targets, groups = read(path)
-        return cls._from_arrays(features, targets, groups, fold)
+        with path.open("rb") as source:
+            digest = file_digest(source, "sha256").hexdigest()
+        return cls._from_arrays(
+            features, targets, groups, fold, source_file=path.name, source_sha256=digest
+        )
 
     @classmethod
     def _download_and_cache(

@@ -1,16 +1,40 @@
 """Scalar regressors. Model construction is independent of the target generator."""
 
+from contextlib import contextmanager
+
 import torch
 from torch import nn
 
 from .config import ModelSettings
 
 
+@contextmanager
+def _initialize(model: nn.Module, seed: int | None):
+    if seed is None:
+        yield
+        return
+
+    # Seed only CPU initialization, then place weights on the caller's default device.
+    device = torch.empty(0).device
+    with torch.random.fork_rng(devices=[]), torch.device("cpu"):
+        torch.default_generator.manual_seed(seed)
+        yield
+    if device.type != "cpu":
+        model.to(device)
+
+
 class MGS_KAN(nn.Module):
+    model_name = "mgs_kan"
+
     def __init__(self, settings: ModelSettings | None = None):
         super().__init__()
         if settings is None:
             settings = ModelSettings()
+        self.model_settings = settings
+        with _initialize(self, settings.init_seed):
+            self._init_parameters(settings)
+
+    def _init_parameters(self, settings: ModelSettings) -> None:
         self.register_buffer("pairs", torch.triu_indices(settings.features, settings.features, offset=1).T)
         singles = (settings.features, settings.single_kernels)
         pairs = (len(self.pairs), settings.pair_kernels)
@@ -64,11 +88,16 @@ def make_model(name: str, settings: ModelSettings | None = None):
         raise ValueError(f"Unknown model {name!r}")
     if settings is None:
         settings = ModelSettings()
-    return nn.Sequential(
-        nn.Linear(settings.features, settings.mlp_width), nn.ReLU(),
-        nn.Linear(settings.mlp_width, settings.mlp_width), nn.ReLU(),
-        nn.Linear(settings.mlp_width, 1), nn.Flatten(start_dim=0),
-    )
+    model = nn.Sequential()
+    with _initialize(model, settings.init_seed):
+        model.extend([
+            nn.Linear(settings.features, settings.mlp_width), nn.ReLU(),
+            nn.Linear(settings.mlp_width, settings.mlp_width), nn.ReLU(),
+            nn.Linear(settings.mlp_width, 1), nn.Flatten(start_dim=0),
+        ])
+    model.model_name = "mlp"
+    model.model_settings = settings
+    return model
 
 
 def parameter_count(model):

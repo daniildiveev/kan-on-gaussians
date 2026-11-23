@@ -14,6 +14,10 @@ class DatasetSplits:
     n_features: int
     _target_mean: float
     _target_scale: float
+    fold: int | None = None
+    source_file: str | None = None
+    source_sha256: str | None = None
+    target_column: str | None = None
 
     def inverse_target(self, values: torch.Tensor) -> torch.Tensor:
         """Convert standardized predictions or targets to original units."""
@@ -26,6 +30,9 @@ class DatasetSplits:
         y: np.ndarray,
         groups: np.ndarray,
         fold: int,
+        *,
+        source_file: str | None = None,
+        source_sha256: str | None = None,
     ) -> Self:
         x = np.asarray(x, dtype=np.float64)
         y = np.asarray(y, dtype=np.float64)
@@ -56,6 +63,10 @@ class DatasetSplits:
             n_features=x.shape[1],
             _target_mean=target_mean,
             _target_scale=target_scale,
+            fold=fold,
+            source_file=source_file,
+            source_sha256=source_sha256,
+            target_column=getattr(cls, "target", None),
         )
 
 
