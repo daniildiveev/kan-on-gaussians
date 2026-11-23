@@ -1,10 +1,19 @@
-% Standalone mathematical appendix. Compile with pdflatex (twice) or tectonic.
+% Compile independently, or input after \appendix with \StudyReport defined.
 % Scalar sources: study.ipynb and src/{config,data,models,experiment}.py.
 % Targeted fits: experiments/{pair_ablation,pair_confirmation}.py.
 % Geometry: experiments/geometry_{reference,benchmark,confirmation}.py.
-\documentclass[11pt]{article}
-\usepackage[margin=1in]{geometry}
-\usepackage{amsmath,amssymb,booktabs,url}
+\ifdefined\StudyReport
+  \let\StudyMathSection\subsection
+  \let\StudyMathSubsection\subsubsection
+  \let\StudyMathEnd\relax
+\else
+  \documentclass[11pt]{article}
+  \usepackage[margin=1in]{geometry}
+  \usepackage{amsmath,amssymb,booktabs,url}
+  \let\StudyMathSection\section
+  \let\StudyMathSubsection\subsection
+  \def\StudyMathEnd{\end{document}}
+\fi
 
 \newcommand{\E}{\mathbb{E}}
 \newcommand{\R}{\mathbb{R}}
@@ -15,12 +24,16 @@
 \newcommand{\norm}[1]{\lVert #1\rVert}
 \newcommand{\setP}{\mathcal{P}}
 
-\title{Mathematical Appendix for the MGS-KAN Experiments}
-\author{}
-\date{}
-
-\begin{document}
-\maketitle
+\ifdefined\StudyReport
+  \section{Mathematical appendix}
+  \label{app:math}
+\else
+  \title{Mathematical Appendix for the MGS-KAN Experiments}
+  \author{}
+  \date{}
+  \begin{document}
+  \maketitle
+\fi
 
 The scalar studies compare prediction of noisy targets, recovery of planted
 pair indices, and estimation of interaction surfaces. The Gaussian geometry
@@ -28,7 +41,7 @@ benchmark predicts a bivariate distribution and reports its center and
 covariance errors. This appendix defines the quantities used in
 \path{study.ipynb} and the experimental report.
 
-\section{Scalar data generation}
+\StudyMathSection{Scalar data generation}
 
 An observation has raw features \(X=(X_0,\ldots,X_{11})^\top\) with independent
 \(X_i\sim\N(0,1)\). The three shared additive components are
@@ -93,7 +106,7 @@ These scaling constants are fitted on the training rows and reused on the
 other splits. The clean target and its components are available to the
 evaluator.
 
-\section{Scalar models and training}
+\StudyMathSection{Scalar models and training}
 
 Let \(\setP_d=\{(i,j):0\le i<j<d\}\) in lexicographic order.
 The scalar MGS-KAN prediction decomposes as
@@ -187,9 +200,9 @@ absolute error below \(10^{-10}\). A separate noiseless pilot uses \(32\)
 rows, no regularization and a budget of \(350\) epochs. Its training
 RMSE must be below \(0.05\) in unit-signal coordinates.
 
-\section{Scalar prediction and recovery}
+\StudyMathSection{Scalar prediction and recovery}
 
-\subsection{Paired held-out prediction}
+\StudyMathSubsection{Paired held-out prediction}
 
 Let \(R_{m,s,r}\) denote test RMSE for model \(m\), data seed \(s\), and
 initialization \(r\). With \(\mathcal I=\{71,73,79\}\) and data seeds
@@ -207,7 +220,7 @@ averaging in \eqref{eq:pair-average}. The independent unit is the data seed.
 When reported, relative reduction is \(1-\overline R_{\rm new}/\overline
 R_{\rm ref}\), using the seed-averaged errors.
 
-\subsection{Support recovery from validation marginals}
+\StudyMathSubsection{Support recovery from validation marginals}
 
 Fix a learned pair \(g_{ij}\) and the \(n_{\rm val}\) validation rows.
 Let \(u_r=z_{ri}\), \(v_r=z_{rj}\), and
@@ -237,7 +250,7 @@ Exact support recovery is \(\widehat{\setP}=\setP_\star\).
 For the additive control, \(\lvert\widehat{\setP}\rvert\) counts false
 selections.
 
-\subsection{Population interaction shape error}
+\StudyMathSubsection{Population interaction shape error}
 
 Here \(X\sim\N(0,I_{12})\) in raw coordinates. For a prediction function on
 those coordinates \(F(x)=\widehat y(z(x))\), let
@@ -290,7 +303,7 @@ rescaled with each fit's training statistics before prediction. Shape
 MSE has squared target units and uses a fixed product measure. The
 validation RMS in \eqref{eq:validation-recovery} measures effect size.
 
-\subsection{Noiseless error decomposition}
+\StudyMathSubsection{Noiseless error decomposition}
 
 For \(e(x)=F(x)-f_t(x)\), let \(b=\E[e(X)]\) and
 \(e_i(u)=\E[e(X)\mid X_i=u]-b\). Under the independent input measure,
@@ -312,7 +325,7 @@ integration error. The population noisy MSE equals
 between noisy and clean MSE also includes the empirical cross term
 \(-2|D|^{-1}\sum_{r\in D}e(x_r)\varepsilon_r\).
 
-\subsection{Targeted capacity experiment}
+\StudyMathSubsection{Targeted capacity experiment}
 
 The expanded model has \(K_{24}=8\) and \(K_{ij}=2\) for every other
 pair. Its six extra kernels start with zero amplitude and join the same
@@ -338,9 +351,9 @@ settings. The confirmation fixes the expanded arm at \((8,0.003,0.001)\)
 and evaluates seeds \(4101\) through \(4110\). It compares
 \(\operatorname{PairMSE}_{24}\) and whole-model \(R_D\) separately.
 
-\section{Gaussian geometry benchmark}
+\StudyMathSection{Gaussian geometry benchmark}
 
-\subsection{States, sampling, and metric}
+\StudyMathSubsection{States, sampling, and metric}
 
 A state is \(G=(\mu,C)\), with \(\mu\in\R^2\) and \(C\in\SPD(2)\).
 Two input states are sampled independently. Per state, the center is
@@ -373,7 +386,7 @@ rows. The paired analysis then averages three training initializations
 within each data seed, as in \eqref{eq:pair-average} with \(W_2^2\) in
 place of RMSE.
 
-\subsection{Three target maps}
+\StudyMathSubsection{Three target maps}
 
 For inputs \(G_i=(\mu_i,C_i)\), \(i=0,1\), write
 \(\bar\mu=(\mu_0+\mu_1)/2\) and \(\bar C=(C_0+C_1)/2\).
@@ -418,7 +431,7 @@ Define
 The target is \(G_{\rm nonlin}=(\bar\mu+\delta,\ e^S\bar C(e^S)^\top)\),
 where \(e^S\) is the matrix exponential.
 
-\subsection{Residual models for Gaussian states}
+\StudyMathSubsection{Residual models for Gaussian states}
 
 If \(C=LL^\top\) is its Cholesky factorization with positive diagonal,
 define the encoding \(E\) and its inverse by
@@ -453,7 +466,7 @@ The counts are
    &=(10+1)42+(42+1)42+(42+1)5=2483.
 \end{align*}
 
-\subsection{Gaussian message models and aggregation}
+\StudyMathSubsection{Gaussian message models and aggregation}
 
 The five message models use layer widths \(2\to3\to1\), giving nine
 directed edges across the two layers. For the spline and MLP edge
@@ -503,7 +516,7 @@ The target in \eqref{eq:geodesic} is a weighted barycenter of the two
 original inputs. The trained BW network uses equal weights on its learned
 messages and learns their transformations.
 
-\subsection{Geometry training and interpretation}
+\StudyMathSubsection{Geometry training and interpretation}
 
 The batch objective is mean \(W_2^2\), with the additional penalty
 \(0.001\sum_{(i,j)\in\setP_{10}}\norm{A_{ij}}_{\rm F}\) for MGS-KAN,
@@ -566,6 +579,80 @@ arithmetic aggregation reduced geodesic covariance error from
 The aggregation comparison supports the geometric interpretation, and a
 matched change within MGS-KAN would isolate its contribution.
 
+\StudyMathSection{Third-order residuals and recovery}
+\label{app:hyperedge-math}
+
+Let \(S\) be a group of \(q\) coordinates of the encoded input \(z\).
+With output dimension \(d_o\), each kernel on \(S\) contributes
+\begin{equation}
+ {\bf a}_{Sk}\exp\!\left[-\tfrac12(z_S-c_{Sk})^\top
+                  L_{Sk}L_{Sk}^\top(z_S-c_{Sk})\right],
+ \qquad {\bf a}_{Sk}\in\R^{d_o}.
+ \label{eq:hyperedge-vector}
+\end{equation}
+Each lower triangular \(L_{Sk}\) has exponentially parameterized
+diagonal entries. The per-kernel parameter count is
+\(d_o+q+q(q+1)/2\). With ten inputs and five outputs, a single affine
+residual uses \(55\) parameters. The geometry variants use
+\begin{align*}
+ P_{\rm I} &=55+35(5+10+55)=2505,\\
+ P_{\rm II} &=55+10\cdot3\cdot7+45\cdot5\cdot10=2515,\\
+ P_{\rm III} &=55+10\cdot5\cdot7+45\cdot10+120\cdot14=2535 .
+\end{align*}
+The decoder in \eqref{eq:gaussian-code} is common to these residuals and
+the \(2483\)-parameter Flat MLP.
+
+\StudyMathSubsection{Planted geometry targets}
+
+Let \(Z_0,\ldots,Z_9\) be independent standard normal random variables.
+The generator scales each consecutive block of five by
+\((0.65,0.65,0.24,0.30,0.24)\) and decodes the two blocks using
+\eqref{eq:gaussian-code}. With \(u_i=\tanh Z_i/\sqrt{\E[\tanh^2 Z]}\)
+and \(e_j\) the unit vector for zero-based residual coordinate \(j\), the
+three encoded target corrections are
+\begin{align}
+ r_{\rm center}^\star &=0.22\,u_0u_2u_8\,e_0,\nonumber\\
+ r_{\rm cov}^\star    &=0.22\,u_0u_2u_8\,e_2,\nonumber\\
+ r_{\rm pair}^\star   &=\frac{0.22}{\sqrt 2}u_0u_2(e_0+e_2).
+ \label{eq:planted-geometry}
+\end{align}
+The normalization is computed with 80 Gauss--Hermite nodes. The encoded
+target is \(E(\bar\mu,\bar C)+r^\star\). In this coordinate system,
+each task has \(\E[\norm{r^\star}_2^2]=0.22^2\) in the population
+normalization. This matches residual signal energy. Test center and
+covariance losses are evaluated after decoding, using \eqref{eq:w2}.
+Residual RMSE is the square root of the mean squared Euclidean distance
+between the encoded predicted and target states, summed over the five
+coordinates for each observation. The same base code cancels from
+their difference.
+
+\StudyMathSubsection{Pure triple score}
+
+For each learned triple \(S\), let \(g_S\) be the sum of its kernels
+in \eqref{eq:hyperedge-vector}. Draw independent \(X,X'\) from the
+input measure. For \(A\subseteq S\), let \(X_S^{(A)}\) use coordinates
+from \(X'\) for indices in \(A\) and from \(X\) elsewhere. The estimators
+on \(N\) paired draws are
+\begin{align}
+ D_Sg_S(X,X')&=\sum_{A\subseteq S}(-1)^{|A|}g_S(X_S^{(A)}),\nonumber\\
+ \widehat \rho_S&=\left[\frac{1}{8N}\sum_{\ell=1}^N
+        \norm{D_Sg_S(X_\ell,X'_\ell)}_2^2\right]^{1/2}.
+ \label{eq:triple-recovery}
+\end{align}
+Terms missing any coordinate of \(S\) cancel in \(D_S\). If \(g_S^{(3)}\)
+is the centered pure third-order component under the independent input
+measure, distinct hybrid evaluations of \(g_S^{(3)}\) have zero expected
+inner product. They differ in at least one coordinate whose conditional
+mean vanishes. Thus
+\(\E[\norm{D_Sg_S}_2^2]=8\E[\norm{g_S^{(3)}}_2^2]\).
+In the geometry experiment, \(N=1024\) with seed \(27823\). The same
+draws are used for all fits. Scores are ranked descending with
+lexicographic tie-breaking. The true triple in
+\eqref{eq:planted-geometry} has population strength \(0.22\).
+The scalar pilot uses the same estimator with one output coordinate and
+seed \(27501\). Neither experiment applies a selection threshold to the
+triple scores.
+
 \begin{thebibliography}{9}
 
 \bibitem{bhatia2019}
@@ -574,6 +661,14 @@ On the Bures--Wasserstein distance between positive definite matrices.
 \emph{Expositiones Mathematicae}, 37(2), 165--191, 2019.
 \url{https://doi.org/10.1016/j.exmath.2018.01.002}.
 
+\ifdefined\StudyReport
+\bibitem{yeh1998concrete}
+I.-C. Yeh.
+\emph{Concrete Compressive Strength} [dataset].
+UCI Machine Learning Repository, 1998.
+\url{https://doi.org/10.24432/C5PK67}.
+\fi
+
 \end{thebibliography}
 
-\end{document}
+\StudyMathEnd

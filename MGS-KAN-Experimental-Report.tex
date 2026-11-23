@@ -1,0 +1,1134 @@
+% Build from this directory with tectonic MGS-KAN-Experimental-Report.tex.
+% Alternatively, run pdflatex twice. Keep study-math.tex and report-figures/ here.
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,graphicx,booktabs,tabularx}
+\usepackage[section]{placeins}
+\usepackage[hidelinks]{hyperref}
+\urlstyle{tt}
+
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{Z}{>{\raggedleft\arraybackslash}X}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{.45em plus .15em}
+\setlength{\emergencystretch}{2em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.15}
+\setcounter{tocdepth}{1}
+\numberwithin{equation}{section}
+
+\title{MGS-KAN and MLP Experimental Report\\[.5ex]
+       \large Diploma project on sparse interactions and Gaussian geometry}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+
+\section{Summary}
+
+This study compares a standalone MGS-KAN and a similarly sized MLP on sparse regression. It
+measures scalar prediction, planted-pair recovery and interaction shape. In a separate
+Gaussian-state benchmark, the seven-model rankings repeated on fresh data. MGS-KAN led on
+nonlinear prediction and ranked fourth on geodesic.
+
+The original 949-parameter MGS-KAN reduced test RMSE by \textbf{29.3\%} on the first sparse
+target, from \textbf{0.3303} for the 937-parameter MLP to \textbf{0.2334}. The ten-seed
+follow-up confirmed a substantial gain on that target and found a smaller gain on a second,
+more oscillatory target. Exact pair recovery held on both sparse targets in the follow-up,
+including the split where the MLP predicted more accurately.
+
+The subsequent diagnosis isolated a large shape error on the oscillatory pair (2,4). In the
+controlled study, increasing that pair from two to eight kernels lowered its error in
+\textbf{all 36 matched comparisons} at both checkpoint endpoints. On ten entirely new data
+seeds, the frozen targeted expansion had lower pair MSE and lower test RMSE than both original
+models on \textbf{10/10 seeds}. The confirmation evaluated an expansion at a known pair on the
+same synthetic function.
+
+With a matched parameter budget, explicit triples improved prediction over
+the pairwise geometry model on targets with a planted triple. The known
+triple ranked first in all 30 hypergraph fits with a planted triple,
+while Flat MLP achieved the lowest
+prediction error. For the original geometry tasks, the advantage under
+distribution shift depended on the shift. On held-out concrete mixtures,
+the hypergraph model had a mean RMSE of 6.119 MPa, compared with 6.091 MPa
+for the MLP.
+
+\tableofcontents
+
+\section{Research question and study design}
+
+The primary question was whether an additive model with explicit Gaussian pair terms would
+provide a prediction advantage for sparse interactions at a similar parameter count. The
+experiment also asked whether the model could locate the pairs and estimate their shapes.
+These last two questions use different criteria. A high estimated interaction magnitude can
+identify a pair even when the fitted bivariate surface has substantial error.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} >{\hsize=.60\hsize}Y>{\hsize=1.40\hsize}Y r @{}}
+\toprule
+\textbf{Stage} & \textbf{Design} & \textbf{Archived fits} \\
+\midrule
+Original study & Two targets \ensuremath{\times} three data seeds \ensuremath{\times} three initializations \ensuremath{\times} two models & 36 \\
+Expanded follow-up & Three targets \ensuremath{\times} ten new data seeds \ensuremath{\times} three initializations \ensuremath{\times} two models & 180 \\
+Shape diagnosis & Reanalysis of saved checkpoints for both sparse targets in the follow-up & 120 reused \\
+Controlled fits & Three existing splits \ensuremath{\times} three initializations \ensuremath{\times} eight crossed settings & 72 \\
+Fresh-seed confirmation & Second sparse target \ensuremath{\times} ten new data seeds \ensuremath{\times} three initializations \ensuremath{\times} three models & 90 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The original test seeds were 2311, 2411 and 2511. The follow-up seeds were 3301, 3307, 3313,
+3319, 3323, 3329, 3331, 3343, 3347 and 3359. The controlled experiment used 3301, 3307 and
+3313, the two closest follow-up seeds to 3307 plus the focus seed itself. The confirmation
+used seeds 4101--4110. The same three initialization seeds, 71, 73 and 79, recur within each
+data split. A data split is the independent unit for the paired prediction comparison. The
+three initializations measure variation in training on the same rows.
+
+\section{Models and synthetic targets}
+
+\subsection{MGS-KAN and MLP architectures}
+
+MGS-KAN sums an affine term, four univariate Gaussian kernels for each of 12 standardized
+inputs, and two bivariate Gaussian kernels for each of the 66 unordered feature pairs. Every
+bivariate kernel has a free amplitude, a two-coordinate center, and three free parameters in a
+lower triangular factor. The diagonal entries are positive. For displacement d from the
+center, each kernel is proportional to exp(\ensuremath{-}\ensuremath{\tfrac12}\(d^\top P d\)),
+with P = \(LL^\top\). This allows rotated Gaussian surfaces. An individual pair contribution
+is the sum of the kernels assigned to that pair. Training adds the sum of L2 norms of the pair
+amplitude vectors, scaled by \ensuremath{\lambda}, to the mean squared error.
+
+\begin{equation}
+\begin{aligned}
+\widehat y(z)
+ &= b+w^\top z+
+ \sum_{i=0}^{11}\sum_{k=1}^{4}a_{ik}
+       \exp\!\left[-\tfrac12p_{ik}(z_i-c_{ik})^2\right]\\
+ &\quad+\sum_{i<j}\sum_{k=1}^{2}a_{ijk}
+       \exp\!\left[-\tfrac12d_{ijk}^\top L_{ijk}L_{ijk}^\top d_{ijk}\right].
+\end{aligned}
+\label{eq:report-scalar-model}
+\end{equation}
+
+Here z is the vector of standardized inputs, p is a positive univariate precision, and d is
+the standardized pair input minus its kernel center.
+
+The baseline has 13 affine parameters, 144 univariate parameters and 792 bivariate parameters,
+for \textbf{949} total. The comparison MLP has two width-24 ReLU hidden layers and a scalar
+linear output, for \textbf{937} parameters. The baseline counts differ by 1.26\% relative to
+MGS-KAN. The targeted MGS-KAN changes only pair (2,4), adding six Gaussian kernels and 36
+parameters for \textbf{985} total.
+
+\subsection{Synthetic regression targets}
+
+Each observation uses 12 independent standard-normal raw inputs. Feature indices are
+zero-based. The shared additive components are \(\sin(x_6)\), \(0.5(x_7^2-1)\), and
+\(\tanh(x_8)\). Each component is centered and scaled using a separate, fixed reference sample
+of 100,000 rows. Their sum is centered and scaled again at the task level, then independent
+Gaussian noise with standard deviation 0.10 is added. The training split alone sets the
+feature means and scales used by the predictors.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} l c Y @{}}
+\toprule
+\textbf{Target} & \textbf{Pair} & \textbf{Planted component before standardization} \\
+\midrule
+Original sparse & (0,1) & \(x_0x_1\) \\
+Original sparse & (2,3) & \(\sin(x_2x_3)\) \\
+Original sparse & (4,5) & Rotated Gaussian \\
+Second sparse & (0,2) & \(\tanh(x_0)\tanh(x_2)\) \\
+Second sparse & (1,5) & \(\exp[-\tfrac12((x_1-x_5)/0.6)^2]\) \\
+Second sparse & (2,4) & \(\sin(2x_2)\sin(2x_4)\) \\
+Additive control & --- & Shared additive components only \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The rotated Gaussian uses the recorded substitute fixture with center (0.3,
+\ensuremath{-}0.4), amplitude 1.7, principal axes rotated counterclockwise by \(\pi/6\), and
+precision eigenvalues 4 and 0.5. The two sparse targets provide different shape and overlap
+conditions. In the second target, pairs (0,2) and (2,4) share \(x_2\), and (2,4) changes sign
+repeatedly along each input coordinate.
+
+\section{Training and evaluation}
+
+\subsection{Splits, paired training and checkpointing}
+
+Each data seed produces 2,048 training, 512 validation and 2,048 test rows. Models share the
+same split, observed targets and minibatch order within each data-seed and initialization
+block. Tasks on the same data seed use the same raw inputs and noise draws. The test set is
+scored after validation selects a checkpoint.
+
+The optimizer is Adam with batches of 128. The standard runs validate every epoch for at most
+300 epochs, use a patience of 30 epochs, and keep the earliest checkpoint at the lowest
+validation RMSE. The original study compared four development settings per task and model by
+crossing learning rates 0.001 and 0.003 with pair penalties 0.0001 and 0.001 for MGS-KAN, or
+weight decay 0 and 0.001 for the MLP. It used development seed 2211. The follow-up inherited
+these settings for the original targets and ran the same grid on development seed 3203 for the
+second sparse target. The confirmation froze the expanded setting from the ablation before
+seeing its fresh splits.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} Y Z Z @{}}
+\toprule
+\textbf{Target} & \textbf{MGS-KAN LR / \ensuremath{\lambda}} & \textbf{MLP LR / weight decay} \\
+\midrule
+Original sparse & 0.003 / 0.001 & 0.003 / 0.001 \\
+Additive control & 0.003 / 0.001 & 0.001 / 0.001 \\
+Second sparse & 0.001 / 0.001 & 0.003 / 0 \\
+Expanded arm on second sparse & 0.003 / 0.001 & --- \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Three evaluation measures}
+
+\begin{enumerate}
+
+\item \textbf{Whole-model test RMSE} uses noisy observed test targets and is in target units.
+Results are averaged over the three per-fit RMSEs within each data seed before computing
+paired differences.
+
+\item \textbf{Interaction recovery} evaluates each MGS-KAN pair's pure interaction on the validation
+rows. It subtracts the row and column means of the pair surface evaluated on the Cartesian
+product of the empirical validation marginals, and adds the grand mean. The RMS along the
+observed validation diagonal is the score. A pair is selected when its score strictly exceeds
+5\% of the training-target standard deviation. Ranking and exact selection of the planted set
+are reported separately.
+
+\item \textbf{Pair shape MSE} measures squared error against the centered noiseless bivariate
+surface and is in squared target units. It uses a common independent standard-normal input
+measure. For an MLP, the comparable pair surface comes from the conditional mean of its whole
+prediction. Shape errors are averaged across individual fits, with the same seed-level pairing
+as above.
+
+\end{enumerate}
+
+Appendix~\ref{app:math} gives the definitions and derivations for all three measures.
+
+\subsection{Checks before final evaluation}
+
+The float64 checks cover all 66 unique pairs, decomposition of the prediction into its terms,
+positive-definite precisions, numerical gradients, and interaction centering. The
+rotated-Gaussian fixture matched the independent calculation to a maximum absolute error of
+2.78 \ensuremath{\times} \(10^{-16}\). A 32-row noiseless overfit check with no regularization
+passed for both models on all three targets. All six pilot training RMSEs were below
+\(10^{-7}\), against a prespecified threshold of 0.05.
+
+\section{Original study}
+
+\subsection{Held-out prediction}
+
+With 36 final fits, the baseline MGS-KAN had lower held-out RMSE on each of the three splits
+for both targets. On the original sparse task, the mean of the seed-level RMSEs was
+\textbf{0.2334} for MGS-KAN and \textbf{0.3303} for the MLP. On the additive control it was
+\textbf{0.1164} and \textbf{0.1387}, respectively.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} Y r r r r @{}}
+\toprule
+\textbf{Target} & \textbf{Seed} & \textbf{MGS-KAN RMSE} & \textbf{MLP RMSE} & \textbf{Difference} \\
+\midrule
+Original sparse & 2311 & 0.2313 & 0.3305 & \ensuremath{-}0.0992 \\
+Original sparse & 2411 & 0.2292 & 0.3302 & \ensuremath{-}0.1010 \\
+Original sparse & 2511 & 0.2398 & 0.3302 & \ensuremath{-}0.0904 \\
+Additive control & 2311 & 0.1132 & 0.1365 & \ensuremath{-}0.0233 \\
+Additive control & 2411 & 0.1243 & 0.1370 & \ensuremath{-}0.0127 \\
+Additive control & 2511 & 0.1116 & 0.1426 & \ensuremath{-}0.0310 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Differences are MGS-KAN minus MLP, computed before rounding. The sparse-task RMSE of 0.2334
+remains above the generator noise standard deviation of 0.10. The three consistent split-level
+gains supported a broader replication.
+
+\subsection{Interaction recovery}
+
+All three planted pairs ranked in the top three and were the only selected pairs in
+\textbf{9/9 original sparse fits}. The additive control selected zero pairs in
+\textbf{9/9 fits}.
+
+\section{Expanded follow-up}
+
+\subsection{Held-out prediction}
+
+The ten new splits reproduced the original sparse-target advantage. On the second sparse
+target the mean advantage shrank to 0.0149 RMSE, and one split reversed direction. On that
+split, seed 3307, MGS-KAN averaged 0.28831 and the MLP 0.27392.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} Y Z Z Z Z @{}}
+\toprule
+\textbf{Target} & \textbf{MGS-KAN RMSE} & \textbf{MLP RMSE} & \textbf{Mean difference} & \textbf{MGS-KAN wins} \\
+\midrule
+Original sparse & 0.2403 & 0.3284 & \ensuremath{-}0.0881 & 10/10 \\
+Second sparse & 0.2858 & 0.3007 & \ensuremath{-}0.0149 & 9/10 \\
+Additive control & 0.1179 & 0.1386 & \ensuremath{-}0.0207 & 10/10 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} l Z Z Z @{}}
+\toprule
+\textbf{Data seed} & \textbf{Original sparse \ensuremath{\Delta}} & \textbf{Second sparse \ensuremath{\Delta}} & \textbf{Additive \ensuremath{\Delta}} \\
+\midrule
+3301 & \ensuremath{-}0.0572 & \ensuremath{-}0.0124 & \ensuremath{-}0.0257 \\
+3307 & \ensuremath{-}0.0777 & +0.0144 & \ensuremath{-}0.0169 \\
+3313 & \ensuremath{-}0.0646 & \ensuremath{-}0.0138 & \ensuremath{-}0.0250 \\
+3319 & \ensuremath{-}0.0841 & \ensuremath{-}0.0343 & \ensuremath{-}0.0249 \\
+3323 & \ensuremath{-}0.1099 & \ensuremath{-}0.0410 & \ensuremath{-}0.0259 \\
+3329 & \ensuremath{-}0.0993 & \ensuremath{-}0.0335 & \ensuremath{-}0.0156 \\
+3331 & \ensuremath{-}0.0988 & \ensuremath{-}0.0104 & \ensuremath{-}0.0224 \\
+3343 & \ensuremath{-}0.0701 & \ensuremath{-}0.0128 & \ensuremath{-}0.0216 \\
+3347 & \ensuremath{-}0.1039 & \ensuremath{-}0.0028 & \ensuremath{-}0.0088 \\
+3359 & \ensuremath{-}0.1152 & \ensuremath{-}0.0028 & \ensuremath{-}0.0199 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Interaction recovery}
+
+The original MGS-KAN recovered exactly the three planted pairs in \textbf{30/30 fits on the
+original sparse target} and \textbf{30/30 on the second sparse target}. In each set of 30,
+every planted pair ranked in the top three. None of the 66 candidate pairs crossed the cutoff
+in any of the \textbf{30 additive-control fits}. Pair (2,4) was therefore recovered even in
+the second-target fits on seed 3307. The ranking and selection results measure support
+recovery. The shape analysis below evaluates how closely the learned surface follows the true
+oscillations.
+
+\section{Where the prediction gap narrowed}
+
+\subsection{Estimating pure interaction error}
+
+The post-hoc analysis reused 120 checkpoints from the two sparse tasks in the follow-up. For a
+pair (i,j), it averaged each predictor conditionally over the remaining coordinates and
+removed both marginal main effects and the grand-level contribution. It applied the same
+centering to the true pair surface. MGS-KAN's architecture makes this centered surface
+available directly from its assigned pair terms. The MLP projection used 256 scrambled Sobol
+normal backgrounds. A 40-node Gauss--Hermite rule per coordinate integrated the squared
+difference under the standard-normal product measure. A separate common sample of 32,768 Sobol
+normal inputs estimated whole-model signal MSE against noiseless targets.
+
+Here h is the conditional mean of the prediction for the fixed pair and g is its pure surface.
+
+\begin{equation}
+\begin{aligned}
+g_{ij}(u,v)
+ &=h_{ij}(u,v)
+   -\mathbb E_{X_j}[h_{ij}(u,X_j)]
+   -\mathbb E_{X_i}[h_{ij}(X_i,v)]\\
+ &\quad+\mathbb E_{X_i,X_j}[h_{ij}(X_i,X_j)].
+\end{aligned}
+\label{eq:report-pair-projection}
+\end{equation}
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} l Y r r @{}}
+\toprule
+\textbf{Target} & \textbf{Component} & \textbf{MGS-KAN pair MSE} & \textbf{MLP pair MSE} \\
+\midrule
+Original & Product (0,1) & 0.00988 & 0.00317 \\
+Original & Sine of product (2,3) & 0.02632 & 0.04095 \\
+Original & Rotated Gaussian (4,5) & 0.00074 & 0.00249 \\
+Second & Tanh product (0,2) & 0.00478 & 0.00309 \\
+Second & Gaussian ridge (1,5) & 0.00045 & 0.00143 \\
+Second & Oscillatory product (2,4) & 0.05349 & 0.02712 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Under the independent input distribution, the pure pair components are orthogonal, including
+the two components that share \(x_2\). The estimated MGS-KAN-minus-MLP gap in total noiseless
+MSE moved from \ensuremath{-}0.04972 on the original target to \ensuremath{-}0.00832 on the
+second, a shift of +0.04140 toward the MLP. The summed planted-pair gap shifted by +0.03675,
+accounting for \textbf{89\% of that narrowing} in the estimated noiseless MSE gap. The largest
+adverse pair difference on the second target was +0.02636 for (2,4). The remainder in the
+decomposition includes unplanted and higher-order error and numerical integration error.
+
+\subsection{The reversal on seed 3307}
+
+On this split, the oscillatory pair MSE was \textbf{0.05565} for MGS-KAN and \textbf{0.02468}
+for the MLP. The MLP's estimated remainder error, after accounting for the measured planted
+pairs, first-order effects and squared mean bias, was also lower than on its other nine
+splits, at 0.03238 versus 0.04078. Both factors narrowed the overall advantage.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} Y r @{}}
+\toprule
+\textbf{Evaluation on seed 3307} & \textbf{MGS-KAN minus MLP} \\
+\midrule
+Noisy holdout MSE & +0.00796 \\
+Noiseless target on the same holdout rows, MSE & +0.00702 \\
+Independent normal inputs, noiseless signal MSE & +0.00587 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Initialization 73 drove the largest difference. Its noisy test RMSE was 0.2895 for MGS-KAN and
+0.2586 for the MLP. Initialization 79 favored MGS-KAN on the independent noiseless draw. The
+mean reversal persisted when the observation noise was removed. A denser 64-node projection
+with 512 backgrounds kept the seed-3307 oscillatory pair gap positive at +0.03146, close to
+the original +0.03098.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\linewidth]{report-figures/seed-3307-oscillatory-pair.png}
+\caption{True and fitted pure interaction surfaces for pair (2,4) on seed 3307. Fitted panels average
+the three initializations for display. The error tables average losses from individual fits.}
+\label{fig:oscillatory-pair}
+\end{figure}
+
+\section{Controlled fits on pair (2,4)}
+
+\subsection{Factorial design}
+
+The experiment crossed two or eight kernels on pair (2,4), Adam learning rates 0.001 or 0.003,
+and group penalty \ensuremath{\lambda} = 0.001 or 0. Each of the eight configurations ran on
+data seeds 3301, 3307 and 3313 with all three initializations. The two widths started with the
+same predictor because the six additional kernels had zero starting amplitudes. Common
+parameters, data and minibatch order were paired. Only the specified pair gained capacity. The
+extra amplitudes joined its existing group penalty.
+
+Each run retained two endpoints. The validation-selected checkpoint reproduced the original
+selection and patience rule. Epoch 300 compared the same number of optimizer updates. The nine
+replays at the original setting exactly reproduced their saved selected test predictions and
+their validation histories through stopping.
+
+\subsection{Matched effects}
+
+Each contrast holds the other two factors, data seed and initialization fixed. A negative
+change means the alternate level reduced error. The counts describe matched comparisons across
+repeated settings and initializations on three splits.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} >{\hsize=1.02\hsize}Y Z r >{\hsize=.98\hsize}Z r @{}}
+\toprule
+\textbf{Change} & \textbf{Mean \ensuremath{\Delta} pair MSE, selected} & \textbf{Lower} & \textbf{Mean \ensuremath{\Delta} pair MSE, epoch 300} & \textbf{Lower} \\
+\midrule
+2 \ensuremath{\to} 8 kernels & \ensuremath{-}0.03728 & 36/36 & \ensuremath{-}0.03739 & 36/36 \\
+LR 0.001 \ensuremath{\to} 0.003 & \ensuremath{-}0.00355 & 28/36 & \ensuremath{-}0.00371 & 31/36 \\
+\ensuremath{\lambda} 0.001 \ensuremath{\to} 0 & +0.00012 & 11/36 & +0.00001 & 15/36 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Kernel count had the largest and most consistent effect. On seed 3307 at \ensuremath{\lambda}
+= 0.001, moving from two to eight kernels at the original learning rate reduced pair MSE from
+\textbf{0.05565 to 0.02593}. Increasing the learning rate with two kernels changed the error
+to \textbf{0.05559}. With eight kernels the same rate change reduced it further to
+\textbf{0.01836}. The learning-rate benefit with eight kernels also appeared at epoch 300.
+This pattern supports a capacity limitation for the two-kernel model under the tested
+optimizer and training budget. The larger basis also benefited from the higher learning rate.
+
+Removing the group penalty had a small mean effect on pair error. On seed 3307 it increased
+whole-model test RMSE by \textbf{0.00512} on average across the matched validation-selected
+comparisons. Across all three splits the corresponding increase was \textbf{0.00652}.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} Y r r @{}}
+\toprule
+\textbf{Seed 3307, validation-selected} & \textbf{Pair MSE} & \textbf{Test RMSE} \\
+\midrule
+Original MGS-KAN, 2 kernels & 0.05565 & 0.28831 \\
+8 kernels, original rate and penalty & 0.02593 & 0.21727 \\
+8 kernels, LR 0.003, \ensuremath{\lambda} 0.001 & 0.01836 & 0.19236 \\
+Saved MLP reference & 0.02468 & 0.27392 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The eight-kernel, 0.003 learning-rate, 0.001-penalty setting emerged from the explored splits.
+A separate test on new data seeds then evaluated it with these settings frozen.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\linewidth]{report-figures/seed-3307-controlled-fits.png}
+\caption{Mean pair MSE on seed 3307 by learning rate, kernel count and group penalty. The horizontal
+dotted line shows the saved MLP reference.}
+\label{fig:controlled-fits}
+\end{figure}
+
+\section{Fresh-seed confirmation}
+
+The confirmation compared 985-parameter expanded MGS-KAN, 949-parameter original MGS-KAN, and
+937-parameter MLP on the second sparse target. The ten fresh splits and three initializations
+per arm produced 90 fits. The original models retained their validated settings. The expanded
+model used eight kernels on (2,4), learning rate 0.003 and \ensuremath{\lambda} = 0.001. The
+validation rule and split structure carried forward.
+
+\subsection{Pair (2,4) shape error}
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} Y r @{}}
+\toprule
+\textbf{Model} & \textbf{Mean pair MSE} \\
+\midrule
+Expanded MGS-KAN & \textbf{0.01533} \\
+Original MGS-KAN & 0.05212 \\
+MLP & 0.03182 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The expansion reduced pair error by \textbf{70.6\%} relative to original MGS-KAN and
+\textbf{51.8\%} relative to the MLP. It had lower seed-level pair MSE on \textbf{10/10 splits
+against each reference}. Expanded-minus-reference differences ranged from
+\ensuremath{-}0.04448 to \ensuremath{-}0.03006 versus original MGS-KAN, and
+\ensuremath{-}0.03629 to \ensuremath{-}0.00146 versus the MLP. A finer 64-node projection with
+512 backgrounds preserved the direction on the three splits documented in the notebook. An
+additional check applied that finer projection to all ten splits and retained the 10/10 result
+against both references.
+
+\subsection{Whole-model held-out prediction}
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} Y r @{}}
+\toprule
+\textbf{Model} & \textbf{Mean test RMSE} \\
+\midrule
+Expanded MGS-KAN & \textbf{0.18931} \\
+Original MGS-KAN & 0.28447 \\
+MLP & 0.30596 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The expansion reduced whole-model test RMSE by \textbf{33.5\%} relative to original MGS-KAN
+and \textbf{38.1\%} relative to the MLP. It had lower seed-level test RMSE on \textbf{10/10
+splits against each reference}. The mean paired differences were \ensuremath{-}0.09516 and
+\ensuremath{-}0.11665 target units, respectively. The ten-seed ranges were
+\ensuremath{-}0.12342 to \ensuremath{-}0.07350 against original MGS-KAN, and
+\ensuremath{-}0.16117 to \ensuremath{-}0.07843 against the MLP.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\linewidth]{report-figures/fresh-seed-paired-differences.png}
+\caption{All ten paired differences for pair shape MSE and whole-model test RMSE. The axes have
+different units and scales. Negative values favor the expansion.}
+\label{fig:scalar-confirmation}
+\end{figure}
+
+\section{Gaussian geometry prediction}
+
+This benchmark predicts a bivariate Gaussian from two input Gaussians. It compares seven
+models on affine, geodesic and nonlinear targets using mean squared Wasserstein distance
+\(W_2^2\). The score is the sum of squared Euclidean center error and squared
+Bures--Wasserstein covariance error. Scalar RMSE and planted-pair recovery are reported in the
+preceding sections.
+
+The original comparison used data seeds 3000, 4000 and 5000. The confirmation trained all
+seven models on fresh seeds 6000, 7000 and 8000, with initializations 11, 29 and 47 on each
+split, for 189 fresh fits. It retained the previous learning rates, architectures and float64
+protocol. Each fit used 256 training cases, 128 validation cases, 256 test cases and 2,000
+Adam updates. Checkpoint selection used the lowest validation \(W_2^2\). The fresh run used
+CPU.
+
+\subsection{Fresh held-out scores}
+
+Mean test \(W_2^2\) \ensuremath{\times} \(10^3\), averaged over nine fits per task and model.
+Bold marks the lowest error in each column.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} Y r r r r @{}}
+\toprule
+\textbf{Model} & \textbf{Parameters} & \textbf{Affine} & \textbf{Geodesic} & \textbf{Nonlinear} \\
+\midrule
+MGS-KAN & 2,515 & 0.6156 & 1.5386 & \textbf{3.4113} \\
+Flat MLP & 2,483 & 1.4958 & 2.5599 & 5.6751 \\
+Spline / mean & 2,520 & \textbf{0.0177} & 3.5697 & 45.0840 \\
+Spline / BW & 2,520 & 2.3578 & 1.1072 & 46.7395 \\
+MLP edges / mean & 2,520 & 0.0288 & 1.4141 & 12.4486 \\
+MLP edges / BW & 2,520 & 1.6024 & \textbf{0.3282} & 15.4990 \\
+Anchor / BW & 162 & 5.9902 & 32.7037 & 64.9448 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The full ordering of the seven models repeated for all three tasks. MGS-KAN ranked third on
+affine, fourth on geodesic and first on nonlinear. Its nonlinear test \(W_2^2\) was 39.9\%
+below that of the runner-up, Flat MLP. It finished ahead of every nonlinear comparator on each
+seed. It also beat Flat MLP on every affine and geodesic seed.
+
+Paired MGS-KAN minus Flat MLP test \(W_2^2\) \ensuremath{\times} \(10^3\). Each difference
+averages the three initializations within one data seed.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} Y r r r @{}}
+\toprule
+\textbf{Data seed} & \textbf{Affine \ensuremath{\Delta}} & \textbf{Geodesic \ensuremath{\Delta}} & \textbf{Nonlinear \ensuremath{\Delta}} \\
+\midrule
+6000 & \ensuremath{-}1.0027 & \ensuremath{-}1.1294 & \ensuremath{-}2.9299 \\
+7000 & \ensuremath{-}0.7729 & \ensuremath{-}0.9882 & \ensuremath{-}1.3918 \\
+8000 & \ensuremath{-}0.8650 & \ensuremath{-}0.9463 & \ensuremath{-}2.4696 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Why the geodesic gap persists}
+
+The gap is in the covariance prediction. MGS-KAN averaged 0.00132446 covariance error versus
+0.00002139 for MLP edges / BW. It averaged 0.00021416 center error versus 0.00030678 for that
+model. The covariance excess exceeded the center advantage on all six seeds across the two
+runs. The original mean \(W_2^2\) gap was +0.0011539.
+
+Geodesic MGS-KAN minus MLP edges / BW test error \ensuremath{\times} \(10^3\).
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} Y r r r @{}}
+\toprule
+\textbf{Data seed} & \textbf{Center \ensuremath{\Delta}} & \textbf{Covariance \ensuremath{\Delta}} & \textbf{Total \ensuremath{\Delta}} \\
+\midrule
+6000 & \ensuremath{-}0.0372 & +1.0234 & +0.9862 \\
+7000 & \ensuremath{-}0.1331 & +1.6440 & +1.5109 \\
+8000 & \ensuremath{-}0.1076 & +1.2418 & +1.1342 \\
+Mean & \ensuremath{-}0.0926 & +1.3031 & +1.2105 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\textbf{The target builds in covariance transport.} The true center is the ordinary weighted
+average, with weights 0.65 and 0.35. The true covariance lies 35\% of the way along the
+Bures--Wasserstein geodesic. Its transport matrix depends jointly on the two covariances,
+including their relative orientations. Even an arithmetic covariance average with the correct
+weights omits this transport.
+
+\textbf{The architectures encode different operations.} The geometry version of MGS-KAN starts
+from the arithmetic mean of the two Gaussian states, then predicts a residual in Cholesky
+coordinates from the two encoded inputs. Its pairwise kernels must learn the correction to
+that baseline. MLP edges / BW learns covariance transformations on its edges and combines the
+resulting messages with Bures--Wasserstein barycenters. Its aggregation uses equal weights on
+learned messages, so the task's 0.65/0.35 interpolation still has to be learned.
+
+\textbf{The aggregation comparison supports this interpretation.} The two MLP-edge variants
+share the same 2,520 parameters and geodesic learning rate of 0.01. With BW aggregation, mean
+covariance error fell from 0.00100355 to 0.00002139, a 97.9\% reduction. The covariance error
+improved on all three seeds. Under covariance-only shift, MLP edges / BW also led MGS-KAN,
+with total \(W_2^2\) of 0.000697 versus 0.021992.
+
+Geometry-aware aggregation is a plausible contributor to the lead. A matched MGS-KAN fit that
+changes only its geometric baseline or aggregation would be needed to distinguish that effect
+from differences in representation, regularization and optimization. Three new data seeds
+support a descriptive comparison.
+
+Geodesic and barycenter definitions follow Bhatia, Jain and Lim (2019).
+\href{https://arxiv.org/abs/1712.01504}{On the Bures--Wasserstein distance between positive
+definite matrices}
+
+\section{Third-order hyperedges at a matched budget}
+\label{sec:hyperedge-order}
+
+\subsection{Scalar pilot}
+
+The scalar pilot compared a full-coordinate kernel layer (I), a
+singleton-and-pair layer (II), a singleton-pair-triple layer (III), and
+a two-hidden-layer MLP. They had 515, 521, 517 and 516 trainable parameters,
+respectively. I used 34 full-coordinate kernels. II used four kernels per
+singleton and 13 per pair. III used four per singleton and per pair and
+eight per triple. The MLP widths were \(4\to19\to20\to1\).
+Four independent normal inputs drove an additive task, a
+pure pair task and the pure triple \(u_0u_1u_3\), with standardized
+\(u_i=\tanh(X_i)/\sqrt{\mathbb E[\tanh^2 X]}\) and independent response
+noise of standard deviation \(0.1\). All models used the same splits and
+minibatch order and trained without explicit regularization. Each task
+used three paired data seeds and three initializations.
+
+\textbf{Prediction.} The table gives the mean of the three per-fit test RMSEs
+within each seed, then the mean across seeds.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} Y r r r r @{}}
+\toprule
+\textbf{Task} & \textbf{I} & \textbf{II} & \textbf{III} & \textbf{MLP} \\
+\midrule
+Additive & 0.11590 & 0.10627 & 0.10763 & 0.11814 \\
+Pair & 0.14007 & 0.13171 & 0.13650 & 0.12337 \\
+Triple & 0.18937 & 1.02030 & 0.24996 & 0.15686 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+On the triple task, III beat II on each seed. The population benchmark for
+a sum of at most pairwise functions is \(\sqrt{1.01}\) RMSE, since the centered
+triple is orthogonal to those functions. I and the MLP achieved lower test
+RMSE than III on all three seeds. On the two lower-order controls, II
+achieved lower RMSE than III on all three seeds.
+
+\textbf{Recovery.} The planted triple \((0,1,3)\) ranked first among the
+four groups in all nine III fits on the triple task. The largest triple
+strength per run was \(0.00531\)--\(0.01036\) on the additive control and
+\(0.02137\)--\(0.02601\) on the pair control. The scores use
+\eqref{eq:triple-recovery} and there is no support-selection threshold.
+
+\subsection{Geometry with a common residual and decoder}
+
+All four geometry models encode two Gaussian states into ten scalar
+coordinates and predict five residual coordinates relative to the encoded
+arithmetic base. They share the Cholesky decoder in
+\eqref{eq:gaussian-code}. Variant I uses 35 kernels on the full coordinate
+set. II has three kernels per singleton and five per pair. III uses five
+kernels per singleton and one per pair and per triple. Thus III includes
+all 120 triples and reallocates capacity across orders. Each kernel has
+a shared full precision and a five-vector amplitude. The parameter counts
+are 2,505, 2,515, 2,535 and 2,483 for I, II, III and Flat MLP.
+
+All four models were trained without explicit regularization. On
+development seed 2000, each model and task used the same three-rate
+grid and two initializations. The final 108 fits used fresh data seeds
+9000, 10000 and 11000 and three matched initializations. Every fit
+used 2,000 Adam updates and selected its checkpoint by validation \(W_2^2\).
+The table reports test errors under the original generators.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} Y l r r r @{}}
+\toprule
+\textbf{Task} & \textbf{Model} & \textbf{\(W_2^2\)} & \textbf{Center} & \textbf{Covariance} \\
+\midrule
+Affine & I & 0.0015233 & 0.0006717 & 0.0008517 \\
+ & II & 0.0006423 & 0.0001549 & 0.0004873 \\
+ & III & 0.0006305 & 0.0001489 & 0.0004816 \\
+ & Flat MLP & 0.0014824 & 0.0006066 & 0.0008758 \\
+Geodesic & I & 0.0031560 & 0.0013733 & 0.0017827 \\
+ & II & 0.0012204 & 0.0003575 & 0.0008630 \\
+ & III & 0.0012043 & 0.0002969 & 0.0009075 \\
+ & Flat MLP & 0.0024804 & 0.0014122 & 0.0010682 \\
+Nonlinear & I & 0.0089706 & 0.0046119 & 0.0043588 \\
+ & II & 0.0042227 & 0.0013670 & 0.0028558 \\
+ & III & 0.0041075 & 0.0014858 & 0.0026217 \\
+ & Flat MLP & 0.0049898 & 0.0021732 & 0.0028167 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+III had the lowest mean \(W_2^2\) in this four-model comparison and beat I
+and Flat MLP on all nine task-by-seed comparisons. Its advantage over II
+was small. III beat II on three of three affine, one of three geodesic
+and two of three nonlinear splits. On geodesic it improved center error
+on all three splits. Its covariance error increased enough to reverse
+the total on seeds 10000 and 11000. On nonlinear it improved covariance
+error on all three splits, with the larger center error reversing the
+total on seed 10000.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\linewidth]{report-figures/geometry-order-paired-w2.pdf}
+\caption{Paired test \(W_2^2\) differences for the geometry order comparison.
+Each point averages three initializations within one data seed. Negative
+values favor III. The panels use separate vertical scales.}
+\label{fig:geometry-order-paired}
+\end{figure}
+
+\section{Distribution shifts with frozen weights}
+\label{sec:geometry-shift}
+
+The 108 geometry-order checkpoints were reloaded without retraining.
+For each data seed the four conditions share a new set of base draws.
+The center shift maps \(\mu\) to \(1.8\mu+(1,-0.6)^\top\).
+The covariance shift adds \((0.5,-0.5)^\top\) to log standard deviations
+in the sampled principal axes and keeps the angle fixed. The combined
+condition applies both changes. Targets were regenerated on the shifted
+inputs. The resulting 432 evaluations are matched to the unshifted
+redraw rather than to the original test rows.
+
+The first table gives mean \(W_2^2\). The second decomposes the paired
+III-minus-II contrast and shows how much III's total error increased
+relative to its own ID redraw.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} Y l r r r r @{}}
+\toprule
+\textbf{Task} & \textbf{Model} & \textbf{ID redraw} & \textbf{Center shift} & \textbf{Covariance shift} & \textbf{Both shifts} \\
+\midrule
+Affine & I & 0.001716 & 0.017717 & 0.013418 & 0.030490 \\
+ & II & 0.000736 & 0.009583 & 0.008076 & 0.016638 \\
+ & III & 0.000717 & 0.009794 & 0.008173 & 0.017420 \\
+ & Flat MLP & 0.001730 & 0.022779 & 0.012750 & 0.036446 \\
+Geodesic & I & 0.003184 & 0.032405 & 0.028222 & 0.062617 \\
+ & II & 0.001226 & 0.017741 & 0.016944 & 0.033385 \\
+ & III & 0.001203 & 0.016852 & 0.017452 & 0.033765 \\
+ & Flat MLP & 0.002584 & 0.034103 & 0.023902 & 0.058139 \\
+Nonlinear & I & 0.008983 & 0.096210 & 0.027062 & 0.127475 \\
+ & II & 0.004535 & 0.084343 & 0.012398 & 0.111666 \\
+ & III & 0.004472 & 0.084873 & 0.011557 & 0.111493 \\
+ & Flat MLP & 0.005208 & 0.103801 & 0.010381 & 0.130775 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} Y l r r r r @{}}
+\toprule
+\textbf{Task} & \textbf{Condition} & \textbf{\(\Delta W_2^2\)} & \textbf{\(\Delta\) Center} & \textbf{\(\Delta\) Cov.} & \textbf{III vs.\ ID} \\
+\midrule
+Affine & ID redraw & -0.000018 & -0.000013 & -0.000005 & +0.000000 \\
+ & Center shift & +0.000210 & +0.000161 & +0.000050 & +0.009077 \\
+ & Covariance shift & +0.000097 & -0.000023 & +0.000120 & +0.007455 \\
+ & Both shifts & +0.000782 & +0.000836 & -0.000054 & +0.016703 \\
+Geodesic & ID redraw & -0.000022 & -0.000041 & +0.000018 & +0.000000 \\
+ & Center shift & -0.000889 & -0.000984 & +0.000095 & +0.015649 \\
+ & Covariance shift & +0.000508 & -0.000083 & +0.000591 & +0.016249 \\
+ & Both shifts & +0.000380 & -0.000720 & +0.001100 & +0.032562 \\
+Nonlinear & ID redraw & -0.000063 & +0.000069 & -0.000132 & +0.000000 \\
+ & Center shift & +0.000530 & +0.002289 & -0.001759 & +0.080400 \\
+ & Covariance shift & -0.000841 & -0.000061 & -0.000780 & +0.007085 \\
+ & Both shifts & -0.000173 & +0.000314 & -0.000487 & +0.107021 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The relative order of II and III depends on the shift. On affine, II
+leads III under all three shifts. On geodesic, III leads II under the
+center shift, while II leads under the covariance and combined shifts.
+On nonlinear, III leads II under the covariance and combined shifts.
+Flat MLP has the lowest nonlinear covariance-shift \(W_2^2\) at 0.010381.
+These comparisons concern prediction by frozen checkpoints.
+
+\section{Gaussian targets with a known triple}
+\label{sec:planted-geometry}
+
+Two Gaussian inputs are decoded from scaled independent normal
+coordinates. The generator adds a pure interaction of coordinates
+\((0,2,8)\) to the first center coordinate or to the first log Cholesky
+diagonal. A pair control uses \((0,2)\) and spreads its signal across
+both outputs. Equation~\eqref{eq:planted-geometry} matches the total
+population residual signal energy across the tasks. The splitting,
+targets and batch order are paired across II, III and Flat MLP.
+
+The development seed is 11991. The final data seeds are 12001, 12003,
+12007, 12011 and 12013, with initializations 11, 29 and 47. Splits
+contain 768 training, 256 validation and 1,024 test cases. The same
+three-rate grid and the same 2,000-update schedule apply to each model.
+The development and final stages comprise 54 and 135 fits.
+
+\subsection{Prediction of center and covariance}
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} Y l r r r r @{}}
+\toprule
+\textbf{Task} & \textbf{Model} & \textbf{\(W_2^2\)} & \textbf{Center} & \textbf{Covariance} & \textbf{Residual RMSE} \\
+\midrule
+Center triple & II & 0.048501 & 0.048494 & 0.000007 & 0.220025 \\
+ & III & 0.017373 & 0.017372 & 0.000001 & 0.130011 \\
+ & Flat MLP & 0.000274 & 0.000269 & 0.000005 & 0.016430 \\
+Covariance triple & II & 0.060859 & 0.000256 & 0.060603 & 0.226111 \\
+ & III & 0.020310 & 0.000000 & 0.020310 & 0.129169 \\
+ & Flat MLP & 0.000506 & 0.000003 & 0.000503 & 0.019491 \\
+Pair control & II & 0.000155 & 0.000066 & 0.000089 & 0.011971 \\
+ & III & 0.000112 & 0.000053 & 0.000060 & 0.010296 \\
+ & Flat MLP & 0.000072 & 0.000031 & 0.000041 & 0.007840 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+III reduced test \(W_2^2\) by 64.2\% relative to II on the center task
+and 66.6\% on the covariance task. These improvements occurred on all
+five seeds, predominantly in the component where the triple was
+planted. III also beat II on all five pair-control splits. Flat MLP
+had lower test \(W_2^2\) than III on every split of all three tasks.
+Residual RMSE measures Euclidean error in the five encoded correction
+coordinates, separately from the decoded Gaussian-state errors.
+
+\subsection{Recovery of the planted triple}
+
+The score in \eqref{eq:triple-recovery} measures the pure third-order
+part of each of III's 120 explicit residual groups. Rank is based on
+strength, with lexicographic tie-breaking.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} Y r r @{}}
+\toprule
+\textbf{Task} & \textbf{Planted group at rank 1} & \textbf{Strength range} \\
+\midrule
+Center triple & 15/15 & 0.11941--0.18343 \\
+Covariance triple & 15/15 & 0.10327--0.16679 \\
+Pair control & --- & 0.00085--0.00163 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The true group ranked first in all 30 fits with a planted triple.
+Its strength was below the population target strength \(0.22\).
+The pair control gives the magnitude of the strongest estimated triple
+in each fit. There is no selection threshold. The recovery result
+establishes the ranking of the explicit groups on these synthetic
+targets. Prediction accuracy is reported separately above.
+
+\section{Concrete strength on unseen mixtures}
+\label{sec:concrete-order}
+
+The UCI Concrete Compressive Strength dataset contains 1,030 rows and
+eight inputs \cite{yeh1998concrete}. An exact match on the seven ingredient
+quantities defines a mixture group, giving 427 groups. All ages and
+replicate rows of a mixture stay together. The five outer test folds
+hold out disjoint groups. Validation uses 20\% of the remaining groups
+within each fold. Age is transformed with \(\log(1+\mathrm{age})\).
+Feature and target standardization use training rows only.
+
+The scalar II, III and MLP have 993, 1,001 and 998 trainable parameters,
+respectively. II uses six kernels per singleton and five per pair. III
+uses four per singleton, two per pair and one per triple. The MLP widths
+are \(8\to27\to26\to1\). Each outer fold uses the same three-rate search with two
+development initializations, and three other initializations for the
+final fits. The archive contains 90 validation runs and 45 final fits.
+Test predictions are returned to MPa. The overall row for each model
+averages three per-fit metrics within each fold and gives equal weight
+to the five fold means.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} Y r r r @{}}
+\toprule
+\textbf{Model} & \textbf{Parameters} & \textbf{RMSE (MPa)} & \textbf{MAE (MPa)} \\
+\midrule
+II & 993 & 6.226 & 4.685 \\
+III & 1001 & 6.119 & 4.538 \\
+MLP & 998 & 6.091 & 4.304 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} l r Z Z Z @{}}
+\toprule
+\textbf{Fold} & \textbf{Test rows} & \textbf{II RMSE / MAE} & \textbf{III RMSE / MAE} & \textbf{MLP RMSE / MAE} \\
+\midrule
+1 & 176 & 6.628 / 5.113 & 6.497 / 5.028 & 6.217 / 4.638 \\
+2 & 222 & 6.236 / 4.688 & 6.289 / 4.512 & 6.035 / 4.246 \\
+3 & 234 & 6.852 / 5.014 & 6.511 / 4.722 & 6.946 / 4.485 \\
+4 & 213 & 5.444 / 4.189 & 5.327 / 4.069 & 5.271 / 3.786 \\
+5 & 185 & 5.969 / 4.423 & 5.969 / 4.361 & 5.985 / 4.364 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+III improved mean RMSE by 0.107 MPa relative to II and had lower RMSE
+on four folds. One of those differences, in fold 5, was below 0.001 MPa.
+MLP had the lowest mean RMSE and MAE. Its mean RMSE was 0.028 MPa
+below III, and its mean MAE was 0.235 MPa below III. This is evidence
+about prediction on the five held-out folds of one dataset. The
+dataset has no ground-truth interaction labels.
+
+\section{What the evidence supports}
+
+\textbf{Prediction at the original budget.} The original MGS-KAN delivered a consistent
+advantage on the first sparse target over the nearly equal-size MLP. Its advantage was smaller
+and less consistent on the second target. The second target's oscillatory interaction explains
+a large share of the change in the measured noiseless error gap.
+
+\textbf{Interaction recovery and shape.} The original architecture consistently detected the
+planted support in these synthetic experiments. The additive control showed zero threshold
+crossings across 39 original and follow-up fits. The large shape error on the detected
+oscillatory pair shows why support recovery and shape fidelity warrant separate reporting.
+
+\textbf{Targeted capacity.} The factorial study separates the capacity change from the tested
+rate and group-penalty changes on three studied splits. Adding kernels produced the largest
+pair-error improvement and retained that advantage with equal update counts. The frozen
+expanded setting then improved both endpoints on independent splits drawn from the same second
+target.
+
+\textbf{Gaussian geometry prediction.} MGS-KAN's nonlinear lead repeated on fresh samples. On
+the geodesic target, the strongest model was the MLP with Bures--Wasserstein aggregation, with
+a clear advantage in covariance prediction. That seven-model comparison measured
+prediction of Gaussian states.
+
+\textbf{Third-order prediction.} In the controlled geometry tasks, III improved
+both planted-triple predictions relative to II on all five splits. The advantage
+over II on the standard geometry targets was smaller and sensitive to shifts.
+Flat MLP led on the two planted-triple targets and the pair control. On concrete,
+III had lower mean RMSE and MAE than II, while MLP had the lowest means.
+
+\textbf{Third-order recovery.} III put the true triple first in all nine scalar
+fits and in all 30 planted-geometry fits. The planted geometry score magnitude
+remained below the target strength. Recovery of the explicit group and accuracy
+of its fitted response therefore require separate measurements.
+
+\textbf{Limits of the conclusion.} In the scalar pairwise studies, the inputs are independent
+standard normals, the tasks are synthetic and the expanded pair was known from the generator.
+The fresh-seed experiment varies
+the samples while keeping the same target. Its comparison is between fixed settings, including
+36 additional parameters and the higher learning rate in the expanded arm. The seed counts and
+ranges are descriptive, and initializations on a single split share the same observations. A
+procedure for choosing which unknown pair to expand and evidence across other target functions
+remain open research questions.
+
+\section{Reproducing the study}
+
+The executable notebook contains the protocol, reports and plots. Run from the project root
+with Python 3.12 and the dependencies pinned in \path{requirements-study.txt}. Restart the
+Jupyter kernel and run all cells, or use the headless command.
+
+\begin{verbatim}
+python -m pip install -r requirements-study.txt
+python -m jupyterlab study.ipynb
+python -m nbconvert --to notebook --execute --inplace \
+  --ExecutePreprocessor.timeout=-1 study.ipynb
+\end{verbatim}
+
+{\raggedright
+The core implementation is in \path{src/config.py}, \path{src/data.py}, \path{src/models.py}
+and \path{src/experiment.py}. The controlled and confirmation stages use
+\path{experiments/pair_ablation.py} and \path{experiments/pair_confirmation.py}. Protocols
+record seeds, settings and code fingerprints. Matching saved bundles are verified before
+reuse. The full notebook reruns reproduced the corresponding tables and figures.\par}
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} >{\hsize=.5\hsize}Y>{\hsize=1.5\hsize}Y @{}}
+\toprule
+\textbf{Stage} & \textbf{Manifest path relative to the project root} \\
+\midrule
+Original study & \path{outputs/study/df24c2b5a1de3a48/final/manifest.json} \\
+Expanded follow-up & \path{outputs/study/followup/9c04ad7dfc77dc19/final/manifest.json} \\
+Controlled fits & \path{outputs/study/ablation/d7acbb7046e862ad/manifest.json} \\
+Fresh-seed confirmation & \path{outputs/study/confirmation/8ef2c0ec02a44237/manifest.json} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The four manifests cover \textbf{378 fit files}, including nine baseline replays in the
+ablation. The two endpoints per ablation fit bring the total to \textbf{450 saved test RMSEs}.
+Independent recomputation from the archived predictions and targets matched to within 5.56
+\ensuremath{\times} \(10^{-17}\) target units. The archived fit-file SHA-256 hashes also
+matched. The development grid contributed 24 additional trials and the overfit check
+contributed six pilot fits.
+
+The recorded CPU is an Intel Core i5-9400F. In the original study the median training and
+validation times per fit were 8.46 seconds for MGS-KAN and 3.45 seconds for the MLP. After an
+interruption and cache reuse, the final original notebook invocation completed in 107.7
+seconds. The follow-up took 330.3 seconds in its notebook invocation. The ablation and
+confirmation stages took 163.8 and 159.2 wall seconds, respectively. These later runs used up
+to five single-threaded workers, so their wall times describe execution of the stage rather
+than summed training time.
+
+{\raggedright
+The geometry confirmation uses \path{experiments/geometry_confirmation.py}. Its
+\path{manifest.json}, \path{individual_fits.csv} and \path{paired_differences.csv} are under
+\path{outputs/study/geometry_confirmation/21f00c136f3672af/}. The completing CPU invocation
+took 753 seconds after resuming two model groups. All 189 checkpoints reloaded, and an
+independent recomputation matched all 1,323 split scores and their components to within 3.61
+\ensuremath{\times} \(10^{-16}\). Two fresh Jupyter kernels reproduced the confirmation
+tables.\par}
+
+\subsection{Hypergraph run archives}
+
+The following paths are relative to \path{outputs/study/}. Each archive
+contains a protocol file and fit records. The shift archive references
+the original geometry checkpoint digests. The concrete archive also
+records the dataset SHA-256 and all grouped split assignments.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} >{\hsize=.71\hsize}Y >{\hsize=1.29\hsize}Y r @{}}
+\toprule
+\textbf{Stage} & \textbf{Relative path} & \textbf{Final fits} \\
+\midrule
+Scalar order pilot & \path{hypergraph_order/2ce07e7736733605/} & 108 \\
+Geometry order & \path{geometry_order/b160ed1b8a2f0af3/} & 108 \\
+Frozen shifts & \path{geometry_shift/c99327eecfdbbe7d/} & 0 \\
+Planted geometry & \path{planted_geometry/81762f947f7a54ec/} & 135 \\
+Concrete mixtures & \path{concrete_order/bd2a1bf9045ef161/} & 45 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The geometry-order experiment verified 72 development and 108 final fits.
+The first CPU invocation took 119.5 seconds for development and 181.2
+seconds for final fitting and verification. The planted tasks took
+111.3 and 270.4 seconds for 54 development and 135 final fits. Concrete
+took 42.5 and 15.8 seconds for 90 development and 45 final fits.
+The 432 shift evaluations reuse 108 final checkpoints.
+
+Independent recomputation of geometry and shift scores matched all 945
+split evaluations to within \(2.74\times10^{-16}\), including the center
+and covariance components. The 5,400 geometry triple scores and ranks
+were reproduced, as were RMSE and MAE for all 45 concrete fits. Two fresh
+Jupyter kernels reproduced the follow-up tables.
+
+\appendix
+
+\section{Scalar fresh-seed results}
+
+\label{app:scalar-results}
+
+Each entry averages three fits for one data seed. The two tables use different units.
+
+\subsection{Pair (2,4) MSE}
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} Y r r r @{}}
+\toprule
+\textbf{Data seed} & \textbf{Expanded MGS-KAN} & \textbf{Original MGS-KAN} & \textbf{MLP} \\
+\midrule
+4101 & 0.02328 & 0.05585 & 0.02599 \\
+4102 & 0.00597 & 0.05045 & 0.02603 \\
+4103 & 0.02625 & 0.05656 & 0.03125 \\
+4104 & 0.02582 & 0.05587 & 0.02727 \\
+4105 & 0.01105 & 0.05218 & 0.04562 \\
+4106 & 0.01044 & 0.05248 & 0.03457 \\
+4107 & 0.01578 & 0.05080 & 0.02925 \\
+4108 & 0.01138 & 0.05041 & 0.04766 \\
+4109 & 0.00776 & 0.04591 & 0.02569 \\
+4110 & 0.01558 & 0.05071 & 0.02487 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Test RMSE}
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{} Y r r r @{}}
+\toprule
+\textbf{Data seed} & \textbf{Expanded MGS-KAN} & \textbf{Original MGS-KAN} & \textbf{MLP} \\
+\midrule
+4101 & 0.20491 & 0.28301 & 0.29123 \\
+4102 & 0.15623 & 0.27965 & 0.30362 \\
+4103 & 0.23171 & 0.30521 & 0.31014 \\
+4104 & 0.20455 & 0.28242 & 0.28777 \\
+4105 & 0.17991 & 0.28851 & 0.32995 \\
+4106 & 0.18192 & 0.27974 & 0.30584 \\
+4107 & 0.18909 & 0.28679 & 0.30979 \\
+4108 & 0.18205 & 0.28858 & 0.34322 \\
+4109 & 0.17132 & 0.27498 & 0.30249 \\
+4110 & 0.19140 & 0.27577 & 0.27553 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\clearpage
+
+\begingroup
+\setlength{\parindent}{1.5em}
+\setlength{\parskip}{0pt plus 1pt}
+\setlength{\tabcolsep}{6pt}
+\renewcommand{\arraystretch}{1}
+\def\StudyReport{1}
+\input{study-math.tex}
+\endgroup
+
+\end{document}
