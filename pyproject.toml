@@ -7,11 +7,11 @@ name = "mgs-kan"
 version = "0.1.0"
 description = "Scalar regression baselines from the MGS-KAN study"
 requires-python = ">=3.11"
-dependencies = ["torch", "pydantic>=2,<3", "pydantic-settings>=2,<3"]
+dependencies = ["numpy", "torch", "pydantic>=2,<3", "pydantic-settings>=2,<3"]
 
 [project.optional-dependencies]
 test = ["pytest"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-packages = ["mgs_kan"]
+packages = ["mgs_kan", "mgs_kan.data"]
