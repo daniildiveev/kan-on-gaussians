@@ -16,4 +16,4 @@ tracking = ["mlflow-skinny>=2.17,<4"]
 [tool.setuptools]
 package-dir = {"" = "src"}
 py-modules = ["config"]
-packages = ["data", "models", "training", "tracking", "experiments"]
+packages = ["data", "models", "training", "tracking", "experiments", "monitoring"]

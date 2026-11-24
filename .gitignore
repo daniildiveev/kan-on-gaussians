@@ -19,3 +19,4 @@ gkan_results/
 *.pth
 *.ckpt
 docs/superpowers/
+.env

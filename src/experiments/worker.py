@@ -19,6 +19,7 @@ from tracking import MlflowTracker
 from tracking.provenance import SourceVersion
 from training import Trainer
 from training.trainer import _resolve_device
+from .failures import failure_reason
 
 
 def _cpu_model() -> str:
@@ -52,6 +53,7 @@ class TrialWorker:
         self.resources = ResourceSettings(**request["resources"])
         self.device = request["device"]
         self.tracking = TrackingSettings(**request["tracking"])
+        self.run_id = None
 
     def _configure_device(self) -> str:
         torch.set_num_threads(self.resources.cpu_threads)
@@ -121,6 +123,7 @@ class TrialWorker:
             client.set_tag(result.run_id, "mgs_kan.evaluated", "true", synchronous=True)
         except (Exception, KeyboardInterrupt) as error:
             run_id = tracker.last_run_id
+            self.run_id = run_id
             if run_id is None:
                 raise
             # Preserve the original error even if the GPU or tracking server has gone away.
@@ -149,7 +152,14 @@ def main() -> None:
     request = json.loads(sys.stdin.readline())
     if os.name == "posix":
         Thread(target=_watch_parent, args=(request["parent_pid"],), daemon=True).start()
-    result = TrialWorker(request).execute()
+    worker = TrialWorker(request)
+    try:
+        result = worker.execute()
+    except Exception as error:
+        with suppress(OSError):
+            result_path.write_text(json.dumps({"reason": failure_reason(error), "run_id": worker.run_id}),
+                                   encoding="utf-8")
+        raise
     result_path.write_text(json.dumps(result), encoding="utf-8")
 
 

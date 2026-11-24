@@ -1,8 +1,12 @@
 """Settings for the active scalar regression models and their training loop."""
 
-from pathlib import PureWindowsPath
+from pathlib import Path, PureWindowsPath
+from typing import Self
 
-from pydantic import Field, NonNegativeFloat, PositiveFloat, PositiveInt, field_validator
+from pydantic import (
+    Field, HttpUrl, NonNegativeFloat, PositiveFloat, PositiveInt, SecretStr,
+    field_validator, model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -70,3 +74,28 @@ class ResourceSettings(BaseSettings):
 
     cpu_threads: PositiveInt = 2
     gpu_memory_fraction: float = Field(default=0.25, gt=0, le=1)
+
+
+class MonitorSettings(BaseSettings):
+    """Set both endpoint and token to enable remote series alerts."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="MGS_KAN_MONITOR_", frozen=True, hide_input_in_errors=True,
+        allow_inf_nan=False, dotenv_filtering="only_existing",
+    )
+    endpoint: HttpUrl | None = None
+    token: SecretStr | None = Field(default=None, min_length=1)
+    disk_path: Path | None = None
+    disk_threshold_gib: PositiveFloat | None = None
+    disk_margin_gib: PositiveFloat = 1
+
+    @model_validator(mode="after")
+    def validate_connection(self) -> Self:
+        url = self.endpoint
+        if (url is None) != (self.token is None):
+            raise ValueError("Set both monitoring endpoint and bearer token")
+        if url and (url.scheme != "https" or url.username or url.password or url.query or url.fragment):
+            raise ValueError("Use an HTTPS endpoint without credentials, query or fragment")
+        if (self.disk_path is None) != (self.disk_threshold_gib is None):
+            raise ValueError("Set both monitored disk path and threshold")
+        return self
