@@ -33,6 +33,8 @@ class DiskSample(Snapshot):
 class MonitorEvent(Snapshot):
     session_id: UUID
     series_id: str = Field(min_length=1, max_length=160)
+    grid_id: str | None = Field(default=None, min_length=1, max_length=160)
+    elapsed_seconds: int | None = Field(default=None, ge=0)
     sequence: int = Field(ge=1, le=2**63 - 1)
     kind: Kind
     total: int = Field(gt=0)
@@ -51,4 +53,7 @@ class MonitorEvent(Snapshot):
     def check_progress(self) -> Self:
         if self.completed is not None and self.completed > self.total:
             raise ValueError("Completed runs exceed the grid size")
+        if self.grid_id is not None and self.kind == "finished":
+            if self.completed != self.total or self.elapsed_seconds is None:
+                raise ValueError("A finished grid requires all runs and elapsed time")
         return self

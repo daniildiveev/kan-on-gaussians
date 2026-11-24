@@ -15,10 +15,11 @@ class MonitorSession:
     interval = 60
     io_timeout = 3
 
-    def __init__(self, settings: MonitorSettings, series_id: str, total: int, device: str):
+    def __init__(self, settings: MonitorSettings, series_id: str, total: int, device: str,
+                 *, grid_id: str | None = None):
         self.settings = settings
         self.identity = dict(session_id=uuid4(), series_id=series_id[:160], total=total,
-                             device=device[:64])
+                             device=device[:64], grid_id=grid_id[:160] if grid_id else None)
         self._progress = {"completed": None, "trial": None, "run_id": None}
         self._lock = Lock()
         self._stop = Event()
@@ -30,6 +31,11 @@ class MonitorSession:
         self._started = None
         self._registered = False
         self._offline = False
+
+    def begin_series(self, series_id: str, completed_before: int) -> None:
+        with self._lock:
+            self.identity["series_id"] = series_id[:160]
+            self._progress.update(completed=completed_before, trial=None, run_id=None)
 
     def update(self, completed: int | None = None, trial: TrialSnapshot | None = None,
                run_id: str | None = None) -> None:
@@ -61,7 +67,7 @@ class MonitorSession:
                    "Content-Type": "application/json"}
         # Direct TLS request. http.client never follows redirects with our token.
         with closing(HTTPSConnection(url.host.strip("[]"), port=url.port, timeout=self.io_timeout)) as conn:
-            conn.request("POST", url.path or "/", event.model_dump_json().encode(), headers)
+            conn.request("POST", url.path or "/", event.model_dump_json(exclude_none=True).encode(), headers)
             return conn.getresponse().status
 
     def _send(self, event: MonitorEvent) -> bool:
@@ -106,11 +112,13 @@ class MonitorSession:
                 return
         logging.warning("Monitor did not confirm the end of this session")
 
-    def finish(self, kind: Kind, reason: Reason | None = None) -> None:
+    def finish(self, kind: Kind, reason: Reason | None = None, *, elapsed_seconds: int | None = None) -> None:
         if self._thread is None:
             return
         self._final_kind = kind
         self._final_reason = reason
+        with self._lock:
+            self._progress["elapsed_seconds"] = elapsed_seconds
         self._stop.set()
         # Bound the caller's wait even if OS-level DNS resolution stalls.
         self._thread.join(2 * self.io_timeout)
