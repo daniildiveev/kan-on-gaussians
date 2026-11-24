@@ -287,8 +287,11 @@ layers with a ReLU in the residual branch.
 
 Select a visible GPU in the notebook. Reusing the same version and protocol
 resumes completed runs in MLflow. Each dataset and stage has its own series ID.
-The existing heartbeat service receives series progress and run IDs for deep models;
-per-trial model details are sent for the original two models.
+Each call to `grid.run()` uses one heartbeat session. Telegram sends one English
+completion summary for the grid, including runs reused from MLflow and elapsed
+wall time since this call started. Failures and resource alerts identify the
+active series. Update the heartbeat receiver in `vps-metrics` first. To resume a
+grid started on an older checkout, keep using its original source version.
 
 Open [the baseline series notebook](notebooks/baselines/run_series.ipynb).
 In the kernel environment install `python -m pip install -e '.[tracking]' pandas` from the checkout.

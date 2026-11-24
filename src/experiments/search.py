@@ -1,6 +1,8 @@
 """Named validation grids. One resumable ExperimentRunner series per dataset and stage."""
 
 from math import isqrt
+from pathlib import Path
+from time import monotonic
 from typing import Literal, Self
 
 import pandas as pd
@@ -8,10 +10,12 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.config import ModelSettings, MonitorSettings, ResourceSettings, TrackingSettings, TrainingSettings
 from src.data import dataset_class
+from src.experiments.failures import failure_reason
 from src.experiments.features import FeaturePolicy, benchmark_feature_policies
 from src.experiments.runner import ExperimentRunner
 from src.experiments.series import ExperimentSeries
 from src.models.factory import ModelName
+from src.monitoring.client import MonitorSession
 from src.paths import DATA_DIR
 
 
@@ -142,18 +146,42 @@ class ValidationGrid(BaseModel):
         self, *, version: str, device: str, tracking: TrackingSettings, resources: ResourceSettings,
         monitoring: MonitorSettings, root=DATA_DIR, download: bool = False,
     ) -> pd.DataFrame:
+        started = monotonic()
+        grid_id = f"{', '.join(self.datasets)} · {version}"
+        total = self.size
+        session = MonitorSession(monitoring, grid_id, total, device, grid_id=grid_id)
+        try:
+            session.start()
+            runs = self._run_grid(session, version, device, tracking, resources, root, download)
+            if len(runs) != total or runs["run_id"].nunique() != total:
+                raise RuntimeError("Missing or duplicate training runs in validation grid")
+        except KeyboardInterrupt:
+            session.finish("interrupted")
+            raise
+        except Exception as error:
+            session.finish("failed", failure_reason(error))
+            raise
+        session.finish("finished", elapsed_seconds=int(monotonic() - started))
+        return runs
+
+    def _run_grid(
+        self, session: MonitorSession, version: str, device: str, tracking: TrackingSettings,
+        resources: ResourceSettings, root: str | Path, download: bool,
+    ) -> pd.DataFrame:
         rows = []
+        runner = ExperimentRunner(training=self.training, resources=resources, tracking=tracking,
+                                  monitoring=session.settings)
         for dataset, label, columns, stage, settings in self.plan():
             suffix = f"-features-{label}" if columns is not None else ""
-            runner = ExperimentRunner(
-                training=self.training, resources=resources, monitoring=monitoring,
-                tracking=tracking, model_settings=settings,
-            )
-            summary = runner.run(
+            series = ExperimentSeries(
                 series_id=f"{dataset}-validation-{stage.name}{suffix}-{version}",
-                dataset=dataset, feature_columns=columns, models=list(stage.models), folds=list(self.folds),
-                seeds=list(self.seeds), device=device, evaluation="validation",
-                root=root, download=download, max_runs=self.size,
+                dataset=dataset, feature_columns=columns, models=stage.models, folds=self.folds,
+                seeds=self.seeds, device=device, evaluation="validation", training=self.training,
+                resources=resources, model_settings=settings,
+            )
+            session.begin_series(series.series_id, len(rows))
+            summary = runner.run_series(
+                series, session, root=root, download=download, completed_before=len(rows),
             )
             for result in summary.results:
                 run = runner.tracker.client.get_run(result.run_id)

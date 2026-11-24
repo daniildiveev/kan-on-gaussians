@@ -62,6 +62,17 @@ def test_projection_preserves_rows_and_scaling(tmp_path):
 def test_feature_selection_through_workers_and_resume(tmp_path, monkeypatch):
     monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
     from mlflow import MlflowClient
+    from src.experiments import ExperimentRunner
+    from src.experiments.failures import WorkerFailed
+    from src.monitoring.client import MonitorSession
+
+    events = []
+
+    def receive(session, event):
+        events.append(event)
+        return 204
+
+    monkeypatch.setattr(MonitorSession, "_post", receive)
     raw = np.arange(150).reshape(30, 5)
     np.savetxt(tmp_path / "power_plant.csv", raw, delimiter=",", header="AT,V,AP,RH,PE", comments="")
     profile = ValidationGrid.preset("features", datasets=("power_plant",))
@@ -72,8 +83,33 @@ def test_feature_selection_through_workers_and_resume(tmp_path, monkeypatch):
     )
     tracking = TrackingSettings(tracking_uri=(tmp_path/"mlruns").as_uri(), experiment_name="subsets")
     args = dict(version="test", device="cpu", root=tmp_path, resources=ResourceSettings(cpu_threads=1),
-                tracking=tracking, monitoring=MonitorSettings())
+                tracking=tracking, monitoring=MonitorSettings(endpoint="https://monitor.test/v1/events",
+                                                              token="test"))
+
+    worker = ExperimentRunner._worker
+
+    def fail_second_series(self, request):
+        if request["action"] == "trial" and request["feature_columns"] == ("AT",):
+            raise WorkerFailed("worker stopped", "cuda_oom", "failed-run")
+        return worker(self, request)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(ExperimentRunner, "_worker", fail_second_series)
+        with pytest.raises(RuntimeError, match="worker stopped"):
+            grid.run(**args)
+    terminal, = [event for event in events if event.terminal]
+    assert terminal.kind == "failed" and terminal.reason == "cuda_oom"
+    assert terminal.completed == 2 and terminal.total == 4
+    assert "features-ambient" in terminal.series_id and terminal.run_id == "failed-run"
+
+    events.clear()
+    timer = iter([100.0, 165.9, 200.0, 203.1])
+    monkeypatch.setattr("src.experiments.search.monotonic", lambda: next(timer))
     rows = grid.run(**args)
+    terminal, = [event for event in events if event.terminal]
+    assert len({event.session_id for event in events}) == 1
+    assert terminal.kind == "finished" and terminal.grid_id == "power_plant · test"
+    assert terminal.completed == terminal.total == 4 and terminal.elapsed_seconds == 65
     assert grid.size == rows.run_id.nunique() == 4
     assert set(grid.compare(rows).feature_set) == {"ambient", "all"}
     report, paired = grid.feature_reports(rows)
@@ -83,4 +119,8 @@ def test_feature_selection_through_workers_and_resume(tmp_path, monkeypatch):
         run = MlflowClient(tracking_uri=tracking.tracking_uri).get_run(row.run_id)
         assert len(json.loads(run.data.params["feature_columns"])) == row.n_features
         assert not any(metric.startswith("test_") for metric in run.data.metrics)
+    events.clear()
     assert list(grid.run(**args).run_id) == list(rows.run_id)
+    resumed, = [event for event in events if event.terminal]
+    assert resumed.session_id != terminal.session_id
+    assert resumed.kind == "finished" and resumed.completed == 4 and resumed.elapsed_seconds == 3

@@ -70,7 +70,8 @@ class ExperimentRunner:
         session = MonitorSession(self.monitoring, series_id, series.size, device)
         try:
             session.start()
-            summary = self._run_series(series, session, root, download, start, time_budget_seconds)
+            deadline = None if time_budget_seconds is None else start + time_budget_seconds
+            summary = self.run_series(series, session, root=root, download=download, deadline=deadline)
         except KeyboardInterrupt:
             session.finish("interrupted")
             raise
@@ -80,10 +81,11 @@ class ExperimentRunner:
         session.finish("paused" if summary.pending else "finished")
         return summary
 
-    def _run_series(
-        self, series: ExperimentSeries, session: MonitorSession, root: str | Path,
-        download: bool, start: float, time_budget_seconds: float | None,
+    def run_series(
+        self, series: ExperimentSeries, session: MonitorSession, *, root: str | Path,
+        download: bool, completed_before: int = 0, deadline: float | None = None,
     ) -> SeriesSummary:
+        """Execute a series inside the caller's monitoring session."""
         series_id = series.series_id
         request = {
             **series.model_dump(include={"dataset", "device", "resources", "training", "model_settings", "feature_columns"}),
@@ -109,12 +111,12 @@ class ExperimentRunner:
         completed = {
             key: TrialResult(trials[key], **values) for key, values in probe["completed"].items()
         }
-        session.update(completed=len(completed))
+        session.update(completed=completed_before + len(completed))
         print(f"{series_id}: {series.size} planned, {len(completed)} already completed", flush=True)
         for key, trial in trials.items():
             if key in completed:
                 continue
-            if time_budget_seconds is not None and monotonic() - start >= time_budget_seconds:
+            if deadline is not None and monotonic() >= deadline:
                 break
             # Older monitor deployments accept only the original two model names.
             snapshot = TrialSnapshot(**asdict(trial)) if trial.model in ("mlp", "mgs_kan") else None
@@ -127,7 +129,7 @@ class ExperimentRunner:
                 run_id = response["run_id"]
                 session.update(trial=snapshot, run_id=run_id)
                 completed[key] = TrialResult(trial, **self.tracker.trial_scores(run_id))
-                session.update(completed=len(completed))
+                session.update(completed=completed_before + len(completed))
             except Exception as error:
                 if isinstance(error, WorkerFailed):
                     session.update(trial=snapshot, run_id=error.run_id)
