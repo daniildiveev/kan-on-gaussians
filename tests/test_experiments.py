@@ -145,3 +145,18 @@ def test_series_order_and_protocol_are_independent_of_runner():
     ]
     assert series.protocol(identity) == reordered.protocol(identity)
     assert series.protocol({**identity, "device_model": "different"}) != series.protocol(identity)
+
+
+def test_validation_deep_runs_resume_without_test_metrics(local_series):
+    runner, args = local_series
+    args.update(models=["deep_mlp", "resnet"], evaluation="validation")
+    summary = runner.run(**args)
+    for result in summary.results:
+        run = runner.tracker.client.get_run(result.run_id)
+        assert result.best_val_rmse == run.data.metrics["val_rmse"]
+        assert result.best_val_rmse == summary.by_model[result.trial.model]["best_val_rmse"]
+        assert result.test_rmse is None and result.test_r2 is None
+        assert not any(name.startswith("test_") for name in run.data.metrics)
+    assert runner.run(**args) == summary
+    with pytest.raises(ValueError, match="protocol"):
+        runner.run(**{**args, "evaluation": "test"})

@@ -44,6 +44,22 @@ Explicit field values override environment variables. Defaults reproduce the stu
 
 ## Load regression data
 
+Pass a registry name to `load_dataset` or set `DATASET` in the baseline notebook.
+Use `download=True` once to populate the local cache from the linked sources.
+`dataset_class(name).available_folds` lists the supported folds before loading data.
+The same train-only standardization and inverse target transform apply to every split.
+
+| Registry name | Inputs | Target | Test protocol and source |
+| --- | ---: | --- | --- |
+| `airfoil` | 5 | Scaled sound pressure (dB) | Five folds grouped by all four non-frequency conditions of the wind tunnel experiment. [NASA / UCI](https://doi.org/10.24432/C5VW2C) |
+| `power_plant` | 4 | Net power (MW) | Five folds grouping identical inputs. The UCI CSV contains one permutation of the 9,568 observations. [UCI](https://doi.org/10.24432/C5002N) |
+| `sarcos` | 21 | First joint torque | Fold 0 uses the 4,449 official test rows. A seeded 20% of the 44,484 development rows is reserved for validation. The cache bundles both original MAT files. [GPML](https://gaussianprocess.org/gpml/data/) |
+| `gas_turbine_co`, `gas_turbine_nox` | 9 | CO or NOx (mg/m³) | Fold 0 trains on 2011–12, validates on 2013 and tests on 2014–15. Both tasks share the same nine operating measurements and cache. [UCI](https://archive.ics.uci.edu/dataset/551/gas+turbine+co+and+nox+emission+data+set) |
+| `superconductivity` | 81 | Critical temperature (K) | Five folds grouped by elemental fractions, rounded to 12 decimals, from the matching composition table. [UCI](https://archive.ics.uci.edu/dataset/464/superconductivty+data) |
+| `appliances` | 26 | Appliance energy (Wh per ten-minute interval) | Fold 0 uses the earliest 70% for training, next 15% for validation and last 15% for testing. Inputs are 18 room measurements, six weather variables and sine/cosine of time of day. Lighting usage and the two random controls are excluded. [UCI](https://archive.ics.uci.edu/dataset/374/appliances+energy+prediction) |
+| `concrete` | 8 | Compressive strength (MPa) | Five folds grouped by mixture recipe. [UCI](https://doi.org/10.24432/C5PK67) |
+| `wine_quality` | 11 | Sensory quality score | Red and white wines pooled. Five folds group identical chemical measurements across both files. [UCI](https://archive.ics.uci.edu/dataset/186/wine+quality) |
+
 ```python
 import torch
 from torch.utils.data import DataLoader
@@ -228,12 +244,60 @@ A subsequent `fit` starts a new run and a new epoch count from the loaded state.
 
 ### Run a fold and seed series from Jupyter
 
+For architecture selection, open [the validation notebook](notebooks/baselines/select_models.ipynb).
+Its Pydantic grid definitions live in [search.py](src/experiments/search.py).
+These profiles use fold 0, three paired initialization/shuffle seeds, Adam,
+a batch size of 64, a learning rate of 0.001 and 100 epochs. They rank candidates
+using the validation RMSE at the saved best epoch. Test scoring is deferred.
+
+| Profile | Datasets and candidates | Fits |
+| --- | --- | ---: |
+| `airfoil_first` (default) | Airfoil, MLP/MGS-KAN stages 1 and 2 | 12 |
+| `airfoil_all` | Airfoil, the same candidates plus stage 3 | 18, including the original 12 |
+| `deep` | All nine registered regression tasks, four-layer MLP and four-block tabular ResNet, both width 128 | 54 |
+| `features` | Dataset-specific feature subsets, three configurations of each of four model families | 1,656 for Airfoil + Power Plant |
+
+For the feature search set `PROFILE = "features"` and
+`FEATURE_DATASETS = ("airfoil", "power_plant")` in the notebook. Use a one-element tuple
+to run either dataset alone, or `None` for all nine tasks (2,916 fits). Inspect the preview
+before executing the training cell. Each series resumes through MLflow under its dataset,
+stage, feature-set identifier and version. MLflow records the ordered feature names,
+input count and actual parameter count.
+
+Airfoil and Power Plant enumerate all 31 and 15 nonempty subsets. The other policies
+are defined in [features.py](src/experiments/features.py). SARCOS combines the three
+joint measurement groups in all seven ways. The other tasks pair the full set with
+physics or chemistry groups. All candidates within a fold use the same row partitions
+and train-only scaling. Projection happens after the dataset's usual preprocessing.
+
+In this profile the two-hidden-layer MLP takes the integer width closest in parameter
+count to its paired MGS-KAN for the chosen input dimension. Deep MLP candidates have
+3×64, 4×128 and 6×256 hidden layers × width. The ResNet candidates use 2×64, 4×128 and
+6×256 residual blocks × width. The notebook reports validation winners by feature subset
+and family, dispersion across subsets of each size and paired MLP minus MGS-KAN RMSE.
+
+Airfoil's stages use MLP widths 7, 10 and 15 with two hidden layers. The
+corresponding MGS-KAN kernels per feature/pair are 3/1, 4/2 and 7/4.
+The matched parameter counts are 106/111, 181/186 and 346/351.
+Promote a larger candidate within a family when mean validation RMSE improves
+by at least 1% and a majority of paired seeds improves. Compare results within
+each dataset and outer fold. The deep profile measures achievable accuracy at
+a larger budget. Its residual blocks use pre-layer normalization and two linear
+layers with a ReLU in the residual branch.
+
+Select a visible GPU in the notebook. Reusing the same version and protocol
+resumes completed runs in MLflow. Each dataset and stage has its own series ID.
+The existing heartbeat service receives series progress and run IDs for deep models;
+per-trial model details are sent for the original two models.
+
 Open [the baseline series notebook](notebooks/baselines/run_series.ipynb).
 In the kernel environment install `python -m pip install -e '.[tracking]' pandas` from the checkout.
 The first cells locate the checkout from the notebook directory or the editable install.
 For a kernel started elsewhere, you can set `PROJECT_DIR` to the absolute checkout path
 on the server. Check the displayed project, dotenv and data paths, then choose your
 visible GPU and run `smoke` or `full`. Configure the MLflow URI in the kernel or root dotenv file.
+The notebook defaults to Airfoil. Full mode runs both models with three seed pairs
+on every supported fold (30 runs for five folds, six for a single fixed test).
 Cache the dataset under `root`, or pass `download=True` to allow the initial download.
 
 ```python

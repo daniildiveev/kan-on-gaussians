@@ -14,19 +14,25 @@ class MLP(nn.Sequential):
     def __init__(self, settings: ModelSettings | None = None):
         super().__init__()
         self.model_settings = settings or ModelSettings()
-        width = self.model_settings.mlp_width
         with initialize_weights(self, self.model_settings.init_seed):
-            self.extend([
-                nn.Linear(self.model_settings.features, width),
-                nn.ReLU(),
-                nn.Linear(width, width),
-                nn.ReLU(),
-                nn.Linear(width, 1),
-                nn.Flatten(start_dim=0),
-            ])
+            inputs = self.model_settings.features
+            for width in self.hidden_widths():
+                self.extend([nn.Linear(inputs, width), nn.ReLU()])
+                inputs = width
+            self.extend([nn.Linear(inputs, 1), nn.Flatten(start_dim=0)])
+
+    def hidden_widths(self) -> tuple[int, ...]:
+        return (self.model_settings.mlp_width,) * 2
 
     def __getitem__(self, index):
         if isinstance(index, slice):
             # A slice is a view of the selected layers, with the original parameter names.
             return nn.Sequential(OrderedDict(list(self._modules.items())[index]))
         return super().__getitem__(index)
+
+
+class DeepMLP(MLP):
+    model_name = "deep_mlp"
+
+    def hidden_widths(self) -> tuple[int, ...]:
+        return (self.model_settings.deep_width,) * self.model_settings.deep_depth

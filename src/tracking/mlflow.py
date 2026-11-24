@@ -77,8 +77,9 @@ class MlflowTracker:
         return {
             "run_id": run.info.run_id,
             "best_epoch": int(metrics["best_epoch"]),
-            "test_rmse": metrics["test_rmse"],
+            "test_rmse": metrics.get("test_rmse"),
             "test_r2": metrics.get("test_r2"),
+            "best_val_rmse": metrics.get("best_val_rmse"),
         }
 
     def completed_trials(self, series_key: str) -> dict:
@@ -111,7 +112,8 @@ class MlflowTracker:
     def _is_complete(self, run) -> bool:
         if run.info.status != "FINISHED" or run.data.tags.get("mgs_kan.evaluated") != "true":
             return False
-        if not {"test_rmse", "best_epoch"}.issubset(run.data.metrics):
+        score = "best_val_rmse" if run.data.tags.get("mgs_kan.evaluation") == "validation" else "test_rmse"
+        if not {score, "best_epoch"}.issubset(run.data.metrics):
             return False
         filename = run.data.tags.get(_CHECKPOINT_TAG, DEFAULT_CHECKPOINT_FILE)
         files = self.client.list_artifacts(run.info.run_id)
@@ -146,6 +148,7 @@ class MlflowTracker:
             "target_column": data.target_column,
             "fold": data.fold,
             "n_features": data.n_features,
+            "feature_columns": json.dumps(data.selected_features or data.columns) if data.columns else None,
             "seed": settings.seed,
             "shuffle_seed": settings.seed,
             "epochs": settings.epochs,

@@ -22,6 +22,8 @@ class ModelSettings(BaseSettings):
     features: PositiveInt = 12
     init_seed: int | None = Field(default=None, ge=0, le=2**64 - 1)
     mlp_width: PositiveInt = 24
+    deep_width: PositiveInt = 128
+    deep_depth: PositiveInt = 4
     single_kernels: PositiveInt = 4
     pair_kernels: PositiveInt = 2
     single_center_range: tuple[float, float] = (-1.5, 1.5)

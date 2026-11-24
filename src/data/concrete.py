@@ -14,6 +14,8 @@ class ConcreteDataset(CsvDataset):
         "Coarse Aggregate", "Fine Aggregate", "Age", "Concrete compressive strength",
     ]
 
+    columns = (*HEADER[:7], "log1p_age")
+
     @classmethod
     def prepare_columns(cls, header: list[str], values: np.ndarray) -> Table:
         if header != cls.HEADER or values.shape != (1030, 9):
