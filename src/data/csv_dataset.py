@@ -5,7 +5,7 @@ from typing import ClassVar, Self
 
 import numpy as np
 
-from .base import Table, TabularDataset
+from src.data.base import Table, TabularDataset
 
 
 @dataclass(frozen=True)

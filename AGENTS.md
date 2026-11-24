@@ -8,8 +8,8 @@ The user manages commits and pull requests unless they explicitly delegate them.
 ## Research code
 
 - Use Pydantic Settings for active model configuration and pytest for unit tests.
-- Import active code from `config`, `data`, `models`, `training`, `tracking`, and
-  `experiments`. Keep training a single model in `Trainer`, scheduling a series
+- Use absolute imports starting with `src`, including in notebooks and workers.
+  Resolve project files through `src.paths`. Keep training a single model in `Trainer`, scheduling a series
   in `ExperimentRunner`, and MLflow history queries in `MlflowTracker`.
 - Check Git status before editing. Preserve user changes, recorded notebook
   outputs, figures, datasets, and trained weights.

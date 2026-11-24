@@ -9,7 +9,8 @@ from urllib import request
 
 import numpy as np
 
-from .splits import DatasetSplits
+from src.data.splits import DatasetSplits
+from src.paths import DATA_DIR, project_path
 
 
 Table = tuple[np.ndarray, np.ndarray, np.ndarray]
@@ -30,7 +31,7 @@ class TabularDataset(DatasetSplits, ABC):
     def load(
         cls,
         *,
-        root: str | Path = "data",
+        root: str | Path = DATA_DIR,
         fold: int = 0,
         download: bool = False,
     ) -> Self:
@@ -53,7 +54,7 @@ class TabularDataset(DatasetSplits, ABC):
         if relative.is_absolute() or ".." in relative.parts:
             raise ValueError("Dataset filename must be relative to root")
 
-        path = Path(root) / relative
+        path = project_path(root) / relative
         if path.exists():
             return cls._load_file(path, read, fold)
 

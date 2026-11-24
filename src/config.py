@@ -9,6 +9,8 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from src.paths import project_path
+
 
 class ModelSettings(BaseSettings):
     """Read MGS_KAN_* environment variables when constructing a model."""
@@ -88,6 +90,11 @@ class MonitorSettings(BaseSettings):
     disk_path: Path | None = None
     disk_threshold_gib: PositiveFloat | None = None
     disk_margin_gib: PositiveFloat = 1
+
+    @field_validator("disk_path")
+    @classmethod
+    def resolve_disk_path(cls, path: Path | None) -> Path | None:
+        return project_path(path) if path is not None else None
 
     @model_validator(mode="after")
     def validate_connection(self) -> Self:

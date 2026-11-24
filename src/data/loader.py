@@ -1,8 +1,9 @@
 from pathlib import Path
 
-from .base import TabularDataset
-from .concrete import ConcreteDataset
-from .csv_dataset import CsvDataset, CsvSpec
+from src.data.base import TabularDataset
+from src.data.concrete import ConcreteDataset
+from src.data.csv_dataset import CsvDataset, CsvSpec
+from src.paths import DATA_DIR
 
 
 _DATASETS: dict[str, type[TabularDataset]] = {"concrete": ConcreteDataset}
@@ -20,7 +21,7 @@ def register_dataset(name: str, dataset_class: type[TabularDataset]) -> None:
 def load_dataset(
     dataset: str | CsvSpec,
     *,
-    root: str | Path = "data",
+    root: str | Path = DATA_DIR,
     fold: int = 0,
     download: bool = False,
 ) -> TabularDataset:

@@ -8,8 +8,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from config import ModelSettings, ResourceSettings, TrainingSettings
-from data import CsvSpec
+from src.config import ModelSettings, ResourceSettings, TrainingSettings
+from src.data import CsvSpec
 
 
 @dataclass(frozen=True)

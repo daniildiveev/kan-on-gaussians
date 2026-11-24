@@ -1,8 +1,8 @@
 from torch import nn
 
-from config import ModelSettings
-from .kan import MGS_KAN
-from .mlp import MLP
+from src.config import ModelSettings
+from src.models.kan import MGS_KAN
+from src.models.mlp import MLP
 
 
 def make_model(name: str, settings: ModelSettings | None = None) -> nn.Module:

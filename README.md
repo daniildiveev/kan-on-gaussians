@@ -16,8 +16,9 @@ protocols, training code and recorded results live in the archive.
 ## Install and check
 
 When upgrading an existing notebook environment, reinstall the editable project and
-restart the kernel. Import directly from `data`, `models`, `training`, `tracking`,
-`experiments` and `config`. The pip distribution name is `mgs-kan`.
+restart the kernel. Import project modules through `src`, for example
+`from src.experiments import ExperimentRunner`. The pip distribution name is `mgs-kan`.
+Dataset roots and local checkpoint paths are resolved from the checkout. Absolute paths can point elsewhere.
 
 Use Python 3.11+ in a project environment. Install the test extra to run pytest.
 For historical notebook environments, see the archive guide.
@@ -29,8 +30,8 @@ python -m pytest
 
 ```python
 import torch
-from config import ModelSettings
-from models import make_model
+from src.config import ModelSettings
+from src.models import make_model
 
 model = make_model("mgs_kan", ModelSettings(features=8))
 with torch.no_grad():
@@ -46,9 +47,9 @@ Explicit field values override environment variables. Defaults reproduce the stu
 ```python
 import torch
 from torch.utils.data import DataLoader
-from config import ModelSettings
-from data import CsvSpec, load_dataset
-from models import make_model
+from src.config import ModelSettings
+from src.data import CsvSpec, load_dataset
+from src.models import make_model
 
 data = load_dataset("concrete", root="data", fold=0, download=True)
 model = make_model("mlp", ModelSettings(features=data.n_features))
@@ -77,7 +78,7 @@ For a reusable numeric table, give a `CsvDataset` subclass its filename and
 target column. The returned object is an instance of that subclass.
 
 ```python
-from data import CsvDataset, register_dataset
+from src.data import CsvDataset, register_dataset
 
 class HousingDataset(CsvDataset):
     filename = "houses.csv"
@@ -103,10 +104,10 @@ same dataset type. Name registrations last for the current Python process.
 
 ```python
 import torch
-from config import ModelSettings, TrainingSettings
-from data import load_dataset
-from models import make_model
-from training import Trainer
+from src.config import ModelSettings, TrainingSettings
+from src.data import load_dataset
+from src.models import make_model
+from src.training import Trainer
 
 data = load_dataset("concrete", fold=0, download=True)
 settings = TrainingSettings(device="auto", seed=42, epochs=50, batch_size=64)
@@ -155,8 +156,8 @@ An unavailable explicit device raises an error. The dataset stays in CPU memory.
 the fitted model there. `evaluate` follows the model's device. On MPS, predictions
 return to CPU for float64 RMSE calculation.
 
-Use `TrainingSettings(_env_file=".env")` to load the `MGS_KAN_TRAIN_*` values
-from the example environment file.
+Use `TrainingSettings(_env_file=ENV_FILE)` to load the `MGS_KAN_TRAIN_*` values
+from the repository dotenv file. Import `ENV_FILE` from `src.paths`.
 
 ### Track runs from Jupyter
 
@@ -167,10 +168,11 @@ an experiment (default `mgs-kan`). The client uses standard MLflow credentials
 from the kernel environment if the server requires authentication.
 
 ```python
-from config import TrackingSettings
-from tracking import MlflowTracker
+from src.config import TrackingSettings
+from src.paths import ENV_FILE
+from src.tracking import MlflowTracker
 
-tracker = MlflowTracker(TrackingSettings(_env_file=".env"))
+tracker = MlflowTracker(TrackingSettings(_env_file=ENV_FILE))
 trainer = Trainer(model, settings, tracker=tracker)
 result = trainer.fit(data)
 test_rmse = trainer.evaluate(data)
@@ -226,17 +228,23 @@ A subsequent `fit` starts a new run and a new epoch count from the loaded state.
 
 ### Run a fold and seed series from Jupyter
 
-Install the tracking extra in the kernel environment and configure its MLflow URI.
+Open [the baseline series notebook](notebooks/baselines/run_series.ipynb).
+In the kernel environment install `python -m pip install -e '.[tracking]' pandas` from the checkout.
+The first cells locate the checkout from the notebook directory or the editable install.
+For a kernel started elsewhere, you can set `PROJECT_DIR` to the absolute checkout path
+on the server. Check the displayed project, dotenv and data paths, then choose your
+visible GPU and run `smoke` or `full`. Configure the MLflow URI in the kernel or root dotenv file.
 Cache the dataset under `root`, or pass `download=True` to allow the initial download.
 
 ```python
-from config import ResourceSettings, TrackingSettings, TrainingSettings
-from experiments import ExperimentRunner
+from src.config import ResourceSettings, TrackingSettings, TrainingSettings
+from src.paths import ENV_FILE
+from src.experiments import ExperimentRunner
 
 runner = ExperimentRunner(
     training=TrainingSettings(epochs=50, batch_size=64),
-    resources=ResourceSettings(_env_file=".env"),
-    tracking=TrackingSettings(_env_file=".env"),
+    resources=ResourceSettings(_env_file=ENV_FILE),
+    tracking=TrackingSettings(_env_file=ENV_FILE),
 )
 summary = runner.run(
     series_id="concrete-baselines-v1",
@@ -293,10 +301,11 @@ and `MGS_KAN_MONITOR_TOKEN` to the receiver bearer token in the training
 environment. For a local dotenv file use the same runner API:
 
 ```python
-from config import MonitorSettings
-from experiments import ExperimentRunner
+from src.config import MonitorSettings
+from src.paths import ENV_FILE
+from src.experiments import ExperimentRunner
 
-runner = ExperimentRunner(monitoring=MonitorSettings(_env_file=".env"))
+runner = ExperimentRunner(monitoring=MonitorSettings(_env_file=ENV_FILE))
 ```
 
 Registration starts before the dataset probe. Heartbeats continue every minute

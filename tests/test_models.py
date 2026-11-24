@@ -4,8 +4,8 @@ import pytest
 import torch
 from pydantic import ValidationError
 
-from config import ModelSettings
-from models import make_model, parameter_count
+from src.config import ModelSettings
+from src.models import make_model, parameter_count
 
 
 @pytest.fixture(autouse=True)

@@ -6,7 +6,7 @@ import torch
 from mlflow.exceptions import MlflowException
 from requests.exceptions import ConnectionError as RequestsConnectionError, Timeout
 
-from monitoring.events import Reason
+from src.monitoring.events import Reason
 
 
 class WorkerFailed(RuntimeError):

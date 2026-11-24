@@ -11,15 +11,16 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import monotonic
 
-from config import ModelSettings, MonitorSettings, ResourceSettings, TrackingSettings, TrainingSettings
-from data import CsvSpec
-from monitoring.client import MonitorSession
-from monitoring.events import TrialSnapshot
-from tracking import MlflowTracker
+from src.config import ModelSettings, MonitorSettings, ResourceSettings, TrackingSettings, TrainingSettings
+from src.data import CsvSpec
+from src.monitoring.client import MonitorSession
+from src.monitoring.events import TrialSnapshot
+from src.paths import DATA_DIR, PROJECT_ROOT, project_path
+from src.tracking import MlflowTracker
 
-from .failures import WorkerFailed, failure_reason
-from .results import SeriesSummary, TrialResult
-from .series import ExperimentSeries
+from src.experiments.failures import WorkerFailed, failure_reason
+from src.experiments.results import SeriesSummary, TrialResult
+from src.experiments.series import ExperimentSeries
 
 
 class ExperimentRunner:
@@ -47,7 +48,7 @@ class ExperimentRunner:
         folds: list[int],
         seeds: list[tuple[int, int]],
         device: str,
-        root: str | Path = "data",
+        root: str | Path = DATA_DIR,
         download: bool = False,
         max_runs: int | None = None,
         time_budget_seconds: float | None = None,
@@ -83,7 +84,7 @@ class ExperimentRunner:
         series_id = series.series_id
         request = {
             **series.model_dump(include={"dataset", "device", "resources", "training", "model_settings"}),
-            "root": str(Path(root).resolve()),
+            "root": str(project_path(root)),
             "download": download,
             "tracking": self.tracker.settings.model_dump(),
         }
@@ -133,6 +134,9 @@ class ExperimentRunner:
 
     def _worker(self, request: dict) -> dict:
         env = os.environ.copy()
+        # A notebook can import a checkout that is not installed in the kernel environment.
+        pythonpath = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = str(PROJECT_ROOT) + (os.pathsep + pythonpath if pythonpath else "")
         for name in list(env):
             if name.upper().startswith("MGS_KAN_MONITOR_"):
                 del env[name]
@@ -146,7 +150,7 @@ class ExperimentRunner:
         with TemporaryDirectory() as directory:
             result = Path(directory) / "result.json"
             proc = subprocess.Popen(
-                [sys.executable, "-m", "experiments.worker", str(result)],
+                [sys.executable, "-P", "-m", "src.experiments.worker", str(result)],
                 stdin=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
                 start_new_session=True,
             )
