@@ -101,15 +101,21 @@ def test_feature_selection_through_workers_and_resume(tmp_path, monkeypatch):
     assert terminal.kind == "failed" and terminal.reason == "cuda_oom"
     assert terminal.completed == 2 and terminal.total == 4
     assert "features-ambient" in terminal.series_id and terminal.run_id == "failed-run"
+    assert terminal.first_result.model == "mlp"
+    assert [point.percent for point in terminal.milestones] == [25, 50]
 
     events.clear()
-    timer = iter([100.0, 165.9, 200.0, 203.1])
+    timer = iter([100.0, 165.9, 200.0, 203.1, 300.0, 310.0])
     monkeypatch.setattr("src.experiments.search.monotonic", lambda: next(timer))
     rows = grid.run(**args)
     terminal, = [event for event in events if event.terminal]
     assert len({event.session_id for event in events}) == 1
     assert terminal.kind == "finished" and terminal.grid_id == "power_plant · test"
     assert terminal.completed == terminal.total == 4 and terminal.elapsed_seconds == 65
+    assert [point.percent for point in terminal.milestones] == [75]
+    first_new = rows[rows.feature_set == "ambient"].iloc[0]
+    assert terminal.first_result.run_id == first_new.run_id
+    assert terminal.first_result.val_rmse == first_new.val_rmse
     assert grid.size == rows.run_id.nunique() == 4
     assert set(grid.compare(rows).feature_set) == {"ambient", "all"}
     report, paired = grid.feature_reports(rows)
@@ -124,3 +130,14 @@ def test_feature_selection_through_workers_and_resume(tmp_path, monkeypatch):
     resumed, = [event for event in events if event.terminal]
     assert resumed.session_id != terminal.session_id
     assert resumed.kind == "finished" and resumed.completed == 4 and resumed.elapsed_seconds == 3
+    assert resumed.first_result is None and resumed.milestones is None
+
+    # Only the later series is cached. Its runs already count toward the baseline.
+    client = MlflowClient(tracking_uri=tracking.tracking_uri)
+    for run_id in rows.loc[rows.feature_set == "all", "run_id"]:
+        client.delete_run(run_id)
+    events.clear()
+    grid.run(**args)
+    final = events[-1]
+    assert final.completed == 4 and [point.percent for point in final.milestones] == [75]
+    assert "features-all" in final.milestones[0].series_id

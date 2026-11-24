@@ -84,30 +84,47 @@ class MlflowTracker:
 
     def completed_trials(self, series_key: str) -> dict:
         """Read reusable evaluations and protocol IDs for this series."""
-        experiment_id = self._experiment_id()
         completed = {}
         protocols = set()
+        for run in self._search_runs(f"tags.`mgs_kan.series_key` = '{series_key}'"):
+            tags = run.data.tags
+            key = tags.get("mgs_kan.trial")
+            protocol = tags.get("mgs_kan.protocol")
+            # FileStore may be interrupted halfway through creating a tagged run.
+            if not key or not protocol:
+                continue
+            protocols.add(protocol)
+            if key not in completed and self._is_complete(run):
+                completed[key] = self._scores(run)
+        return {"completed": completed, "protocols": sorted(protocols)}
+
+    def grid_completed_counts(self, planned: dict[str, set[str]]) -> dict[str, int]:
+        """Count reusable trials across the whole grid, including later series."""
+        found = {key: set() for key in planned}
+        for run in self._search_runs("attributes.status = 'FINISHED' AND tags.`mgs_kan.evaluation` = 'validation'"):
+            tags = run.data.tags
+            series = tags.get("mgs_kan.series_key")
+            trial = tags.get("mgs_kan.trial")
+            if series not in planned or trial not in planned[series] or trial in found[series]:
+                continue
+            if tags.get("mgs_kan.protocol") and self._is_complete(run):
+                found[series].add(trial)
+        return {key: len(trials) for key, trials in found.items()}
+
+    def _search_runs(self, filter_string: str):
+        experiment_id = self._experiment_id()
         token = None
         while True:
             runs = self.client.search_runs(
                 [experiment_id],
-                filter_string=f"tags.`mgs_kan.series_key` = '{series_key}'",
+                filter_string=filter_string,
                 page_token=token,
                 order_by=["attributes.start_time DESC"],
             )
-            for run in runs:
-                tags = run.data.tags
-                key = tags.get("mgs_kan.trial")
-                protocol = tags.get("mgs_kan.protocol")
-                # FileStore may be interrupted halfway through creating a tagged run.
-                if not key or not protocol:
-                    continue
-                protocols.add(protocol)
-                if key not in completed and self._is_complete(run):
-                    completed[key] = self._scores(run)
+            yield from runs
             token = runs.token
             if not token:
-                return {"completed": completed, "protocols": sorted(protocols)}
+                return
 
     def _is_complete(self, run) -> bool:
         if run.info.status != "FINISHED" or run.data.tags.get("mgs_kan.evaluated") != "true":

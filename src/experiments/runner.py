@@ -129,7 +129,7 @@ class ExperimentRunner:
                 run_id = response["run_id"]
                 session.update(trial=snapshot, run_id=run_id)
                 completed[key] = TrialResult(trial, **self.tracker.trial_scores(run_id))
-                session.update(completed=completed_before + len(completed))
+                session.record_result(completed_before + len(completed), completed[key])
             except Exception as error:
                 if isinstance(error, WorkerFailed):
                     session.update(trial=snapshot, run_id=error.run_id)
