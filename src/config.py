@@ -1,44 +1,72 @@
-"""Frozen study settings. The notebook records these before training."""
+"""Settings for the active scalar regression models and their training loop."""
 
-FEATURES = 12
-SINGLE_KERNELS, PAIR_KERNELS = 4, 2
-MLP_WIDTH, MAX_PARAMETER_GAP = 24, 0.05
-SINGLE_CENTER_RANGE = (-1.5, 1.5)
-SINGLE_AMPLITUDE_SD, PAIR_AMPLITUDE_SD = 0.09, 0.035
-PAIR_CENTER_SD, PAIR_FACTOR_SD = 0.55, 0.08
+from pathlib import PureWindowsPath
 
-TASKS = ("sparse", "additive")
-MODELS = ("mgs_kan", "mlp")
-PLANTED_PAIRS = ((0, 1), (2, 3), (4, 5))
-ADDITIVE_FEATURES = (6, 7, 8)
-QUADRATIC_WEIGHT = 0.5
-# Substitute fixture. The separate proposal's numeric constants were unavailable.
-GAUSSIAN_CENTER = (0.3, -0.4)
-GAUSSIAN_AMPLITUDE = 1.7
-GAUSSIAN_ANGLE = 0.5235987755982988  # pi / 6, counterclockwise
-GAUSSIAN_EIGENVALUES = (4.0, 0.5)
-REFERENCE_SIZE, REFERENCE_SEED = 100_000, 101
-NOISE_SD = 0.1
-SPLIT_SIZES = (2048, 512, 2048)
+from pydantic import Field, NonNegativeFloat, PositiveFloat, PositiveInt, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-DATA_SEEDS = (2311, 2411, 2511)
-INIT_SEEDS = (71, 73, 79)
-DEV_DATA_SEED, DEV_INIT_SEED = 2211, 67
-PILOT_DATA_SEED, PILOT_INIT_SEED = 2111, 61
-BATCH_STREAM = 3079  # Separate RNG domain from parameter initialization.
-CHECK_SEED = 31415
 
-BATCH_SIZE, MAX_EPOCHS, VALIDATE_EVERY, PATIENCE = 128, 300, 1, 30
-LEARNING_RATES = (0.001, 0.003)
-REGULARIZATION = {"mgs_kan": (0.0001, 0.001), "mlp": (0.0, 0.001)}
-PILOT_SIZE, PILOT_EPOCHS, PILOT_LR, PILOT_MAX_RMSE = 32, 350, 0.01, 0.05
+class ModelSettings(BaseSettings):
+    """Read MGS_KAN_* environment variables when constructing a model."""
 
-SELECTION_FRACTION, SCORE_CHUNK = 0.05, 64
-DEVICE, THREADS = "cpu", 1
+    model_config = SettingsConfigDict(
+        env_prefix="MGS_KAN_", frozen=True, allow_inf_nan=False, dotenv_filtering="only_existing"
+    )
 
-# Independent extension. The same ten seeds are paired across all three tasks.
-FOLLOWUP_TASKS = ("sparse", "sparse_overlap", "additive")
-FOLLOWUP_DATA_SEEDS = (3301, 3307, 3313, 3319, 3323, 3329, 3331, 3343, 3347, 3359)
-FOLLOWUP_DEV_SEED, FOLLOWUP_WORKERS = 3203, 5
-OVERLAP_PAIRS = ((0, 2), (1, 5), (2, 4))
-RIDGE_WIDTH, OSCILLATION_RATE = 0.6, 2.0
+    features: PositiveInt = 12
+    init_seed: int | None = Field(default=None, ge=0, le=2**64 - 1)
+    mlp_width: PositiveInt = 24
+    single_kernels: PositiveInt = 4
+    pair_kernels: PositiveInt = 2
+    single_center_range: tuple[float, float] = (-1.5, 1.5)
+    single_amplitude_sd: NonNegativeFloat = 0.09
+    pair_amplitude_sd: NonNegativeFloat = 0.035
+    pair_center_sd: NonNegativeFloat = 0.55
+    pair_factor_sd: NonNegativeFloat = 0.08
+
+
+class TrainingSettings(BaseSettings):
+    """Read MGS_KAN_TRAIN_* overrides when configuring a regression run."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="MGS_KAN_TRAIN_", frozen=True, allow_inf_nan=False, dotenv_filtering="only_existing"
+    )
+
+    seed: int = Field(default=42, ge=0, le=2**64 - 1)
+    epochs: PositiveInt = 50
+    batch_size: PositiveInt = 64
+    learning_rate: PositiveFloat = 0.001
+    device: str = Field(default="cpu", pattern=r"^(cpu|auto|mps|cuda(:[1-9][0-9]*|:0)?)$")
+
+
+DEFAULT_CHECKPOINT_FILE = "best.pt"
+
+
+class TrackingSettings(BaseSettings):
+    """Connection settings for the shared MLflow server."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="MLFLOW_", frozen=True, dotenv_filtering="only_existing"
+    )
+
+    tracking_uri: str = Field(min_length=1)
+    experiment_name: str = Field(default="mgs-kan", min_length=1)
+    checkpoint_file: str = DEFAULT_CHECKPOINT_FILE
+
+    @field_validator("checkpoint_file")
+    @classmethod
+    def validate_checkpoint_file(cls, name: str) -> str:
+        if not name or name == ".." or "\x00" in name or PureWindowsPath(name).name != name:
+            raise ValueError("Expected a checkpoint filename without directories")
+        return name
+
+
+class ResourceSettings(BaseSettings):
+    """Per-worker CPU threads and fraction of the selected CUDA device's memory."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="MGS_KAN_SERIES_", frozen=True, allow_inf_nan=False, dotenv_filtering="only_existing"
+    )
+
+    cpu_threads: PositiveInt = 2
+    gpu_memory_fraction: float = Field(default=0.25, gt=0, le=1)

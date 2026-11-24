@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mgs-kan"
+version = "0.1.0"
+description = "Scalar regression baselines from the MGS-KAN study"
+requires-python = ">=3.11"
+dependencies = ["numpy", "torch", "pydantic>=2,<3", "pydantic-settings>=2.14,<3"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+tracking = ["mlflow-skinny>=2.17,<4"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = ["config"]
+packages = ["data", "models", "training", "tracking", "experiments"]
