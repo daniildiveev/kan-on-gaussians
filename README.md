@@ -285,16 +285,17 @@ each dataset and outer fold. The deep profile measures achievable accuracy at
 a larger budget. Its residual blocks use pre-layer normalization and two linear
 layers with a ReLU in the residual branch.
 
-Select a visible GPU in the notebook. Reusing the same version and protocol
-resumes completed runs in MLflow. Each dataset and stage has its own series ID.
+Select a visible GPU in the notebook. Keep `VERSION` to resume completed runs in
+the same MLflow experiment after a code update. Choose a new version when you
+change the data, model, or training settings and need fresh results.
+Each dataset and stage has its own series ID.
 Each call to `grid.run()` uses one heartbeat session. Telegram announces the start,
 the first newly trained run with its validation RMSE, progress at 25%, 50% and
 75%, and completion. Counts include reusable MLflow runs across the grid.
 Resuming skips thresholds already reached. Thresholds reached on the final run
 are covered by the completion summary. Elapsed time starts with this call.
 Failures and resource alerts identify the
-active series. Update the heartbeat receiver in `vps-metrics` first. To resume a
-grid started on an older checkout, keep using its original source version.
+active series. Update the heartbeat receiver in `vps-metrics` first.
 
 Open [the baseline series notebook](notebooks/baselines/run_series.ipynb).
 In the kernel environment install `python -m pip install -e '.[tracking]' pandas` from the checkout.
@@ -340,9 +341,10 @@ and the CUDA allocator. Other users can consume memory on the same GPU.
 `max_runs` caps the full grid. `time_budget_seconds` lets a running trial
 finish and defers the next one. Errors stop the series and identify the
 combination. Repeat the call with the same series ID and MLflow experiment to
-reuse completed evaluations. Run one controller per series ID. Keep the same
-dataset contents, code, grid, training protocol, device model and thread count.
-You can change the GPU index on identical cards or adjust the memory ceiling.
+reuse completed evaluations matching the requested model, fold, seed pair and
+evaluation mode. Run one controller per series ID. Choose a new series ID for
+experiments you want to compare separately. MLflow keeps the protocol and
+source hashes for each attempt.
 MLflow records each attempt under the tag `mgs_kan.series`.
 
 `summary.results` contains individual run IDs and scores, and `summary.pending`

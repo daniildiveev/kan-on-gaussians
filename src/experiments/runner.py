@@ -98,18 +98,16 @@ class ExperimentRunner:
             **request, "action": "probe", "fold": series.folds[0], "series_key": series.key,
         })
         identity = probe["identity"]
-        protocol = series.protocol(identity)
-        if any(saved != protocol for saved in probe["protocols"]):
-            raise ValueError("Series protocol changed. Use a new series_id.")
         tags = {
             "mgs_kan.series": series_id,
             "mgs_kan.series_key": series.key,
-            "mgs_kan.protocol": protocol,
+            "mgs_kan.protocol": series.protocol(identity),
             "mgs_kan.evaluation": series.evaluation,
         }
         trials = {trial.key: trial for trial in series.trials()}
         completed = {
-            key: TrialResult(trials[key], **values) for key, values in probe["completed"].items()
+            key: TrialResult(trials[key], **values)
+            for key, values in probe["completed"].items() if key in trials
         }
         session.update(completed=completed_before + len(completed))
         print(f"{series_id}: {series.size} planned, {len(completed)} already completed", flush=True)

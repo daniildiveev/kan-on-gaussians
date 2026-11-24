@@ -46,9 +46,10 @@ def test_series_in_fresh_processes_and_resume(local_series, tmp_path, monkeypatc
         assert result.best_epoch == 1
 
     restarted = ExperimentRunner(training=runner.training, tracking=runner.tracker.settings)
-    assert restarted.run(**args) == summary
     first, second = summary.results
     client = runner.tracker.client
+    client.set_tag(first.run_id, "mgs_kan.protocol", "previous-source-version")
+    assert restarted.run(**args) == summary
     first_run = client.get_run(first.run_id)
     # Simulate interruption between FileStore's individual initial tag writes.
     client.create_run(first_run.info.experiment_id, tags={
@@ -67,12 +68,13 @@ def test_series_in_fresh_processes_and_resume(local_series, tmp_path, monkeypatc
     retried = restarted.run(**args)
     assert retried.results[0].run_id != first.run_id
     assert retried.results[1] == second
-    with pytest.raises(ValueError, match="protocol"):
-        restarted.run(**{**args, "seeds": [(17, 43)]})
+    new_seeds = restarted.run(**{**args, "seeds": [(17, 43)]}, time_budget_seconds=0)
+    assert not new_seeds.results and len(new_seeds.pending) == 2
     with (args["root"] / "table.csv").open("a") as table:
         table.write("41,82\n")
-    with pytest.raises(ValueError, match="protocol"):
-        restarted.run(**args)
+    assert restarted.run(**args) == retried
+    new_version = restarted.run(**{**args, "series_id": "local-series-v2"}, time_budget_seconds=0)
+    assert not new_version.results and len(new_version.pending) == 2
 
 
 def test_duplicate_grid_device_and_budget_rejected_before_probe(local_series, monkeypatch):
@@ -158,5 +160,5 @@ def test_validation_deep_runs_resume_without_test_metrics(local_series):
         assert result.test_rmse is None and result.test_r2 is None
         assert not any(name.startswith("test_") for name in run.data.metrics)
     assert runner.run(**args) == summary
-    with pytest.raises(ValueError, match="protocol"):
-        runner.run(**{**args, "evaluation": "test"})
+    test_series = runner.run(**{**args, "evaluation": "test"}, time_budget_seconds=0)
+    assert not test_series.results and len(test_series.pending) == 2

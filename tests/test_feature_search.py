@@ -104,10 +104,14 @@ def test_feature_selection_through_workers_and_resume(tmp_path, monkeypatch):
     assert terminal.first_result.model == "mlp"
     assert [point.percent for point in terminal.milestones] == [25, 50]
 
+    cached_run_id = terminal.first_result.run_id
+    client = MlflowClient(tracking_uri=tracking.tracking_uri)
+    client.set_tag(cached_run_id, "mgs_kan.protocol", "previous-checkout")
     events.clear()
     timer = iter([100.0, 165.9, 200.0, 203.1, 300.0, 310.0])
     monkeypatch.setattr("src.experiments.search.monotonic", lambda: next(timer))
     rows = grid.run(**args)
+    assert cached_run_id in rows.run_id.values
     terminal, = [event for event in events if event.terminal]
     assert len({event.session_id for event in events}) == 1
     assert terminal.kind == "finished" and terminal.grid_id == "power_plant · test"
@@ -133,7 +137,6 @@ def test_feature_selection_through_workers_and_resume(tmp_path, monkeypatch):
     assert resumed.first_result is None and resumed.milestones is None
 
     # Only the later series is cached. Its runs already count toward the baseline.
-    client = MlflowClient(tracking_uri=tracking.tracking_uri)
     for run_id in rows.loc[rows.feature_set == "all", "run_id"]:
         client.delete_run(run_id)
     events.clear()

@@ -93,7 +93,8 @@ class TrialWorker:
         }
         if request["action"] == "probe":
             tracker = MlflowTracker(self.tracking)
-            return {"identity": identity, **tracker.completed_trials(request["series_key"])}
+            history = tracker.completed_trials(request["series_key"], evaluation=request.get("evaluation", "test"))
+            return {"identity": identity, **history}
         if request["action"] != "trial":
             raise ValueError(f"Unknown series action {request['action']!r}")
         for key, value in identity.items():
