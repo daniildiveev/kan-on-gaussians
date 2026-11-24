@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from .base import Table
-from .csv_dataset import CsvDataset
+from src.data.base import Table
+from src.data.csv_dataset import CsvDataset
 
 
 class ConcreteDataset(CsvDataset):

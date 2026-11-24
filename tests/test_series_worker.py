@@ -8,7 +8,7 @@ import pytest
 import torch
 from pydantic import ValidationError
 
-from config import ResourceSettings
+from src.config import ResourceSettings
 
 
 def test_resource_limits_from_dotenv(tmp_path, monkeypatch):
@@ -46,7 +46,7 @@ def request_data(tmp_path, monkeypatch):
 @pytest.fixture
 def worker(monkeypatch):
     pytest.importorskip("mlflow")
-    from experiments import worker
+    from src.experiments import worker
 
     # Inter-op pools may only be initialized once in a process. Each real worker exits.
     monkeypatch.setattr(torch, "set_num_interop_threads", lambda threads: None)
@@ -155,7 +155,7 @@ def test_worker_exits_when_kernel_has_gone(request_data, tmp_path):
     result = tmp_path / "result.json"
     # The recorded parent no longer matches the process that owns this worker.
     process = subprocess.run(
-        [sys.executable, "-m", "experiments.worker", str(result)],
+        [sys.executable, "-m", "src.experiments.worker", str(result)],
         input=json.dumps({**request_data, "parent_pid": -1}) + "\n",
         capture_output=True, text=True, timeout=30,
     )

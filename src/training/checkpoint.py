@@ -9,6 +9,8 @@ from tempfile import TemporaryDirectory
 import torch
 from torch import nn
 
+from src.paths import project_path
+
 
 def _class_name(obj) -> str:
     cls = type(obj)
@@ -51,7 +53,10 @@ class Checkpoint:
         if not isinstance(snapshot, dict) or snapshot.get("format_version") != 1:
             raise ValueError("Unsupported checkpoint format")
         epoch = snapshot["best_epoch"]
-        if snapshot["model_class"] != _class_name(model):
+        saved_class = snapshot["model_class"]
+        if saved_class in ("models.mlp.MLP", "models.kan.MGS_KAN"):
+            saved_class = f"src.{saved_class}"
+        if saved_class != _class_name(model):
             raise ValueError("Checkpoint requires the same model class")
         if optimizer is not None:
             if snapshot["optimizer_class"] != _class_name(optimizer):
@@ -75,7 +80,7 @@ class Checkpoint:
         return epoch
 
     def save(self, path: str | Path) -> None:
-        path = Path(path)
+        path = project_path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(dir=path.parent) as directory:
             staged = Path(directory) / "checkpoint.pt"

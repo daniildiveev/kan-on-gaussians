@@ -6,16 +6,16 @@ import numpy as np
 import pytest
 import torch
 
-from config import ModelSettings, TrackingSettings, TrainingSettings
-from data import CsvSpec, load_dataset
-from models import make_model
-from training import Trainer
+from src.config import ModelSettings, TrackingSettings, TrainingSettings
+from src.data import CsvSpec, load_dataset
+from src.models import make_model
+from src.training import Trainer
 
 
 @pytest.fixture
 def tracker(tmp_path, monkeypatch):
     pytest.importorskip("mlflow")
-    from tracking import MlflowTracker
+    from src.tracking import MlflowTracker
 
     monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
     uri = (tmp_path / "runs").as_uri()
@@ -112,7 +112,7 @@ def test_replay_from_logged_seeds_and_optimizer_options(tracker, data):
 
 def test_source_digest_without_git(tmp_path):
     pytest.importorskip("mlflow")
-    from tracking.provenance import SourceVersion
+    from src.tracking.provenance import SourceVersion
 
     config = tmp_path / "config.py"
     config.write_text("epochs = 2\n")
@@ -133,7 +133,7 @@ def test_source_digest_without_git(tmp_path):
 
 
 def test_restore_checkpoint_from_an_earlier_run(tracker, data, tmp_path):
-    from tracking import MlflowTracker
+    from src.tracking import MlflowTracker
 
     settings = TrainingSettings(device="cpu", epochs=3)
     trainer = Trainer(torch.nn.Linear(1, 1), settings, tracker=tracker)

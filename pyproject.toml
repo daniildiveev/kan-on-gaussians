@@ -13,7 +13,7 @@ dependencies = ["numpy", "torch", "pydantic>=2,<3", "pydantic-settings>=2.14,<3"
 test = ["pytest"]
 tracking = ["mlflow-skinny>=2.17,<4"]
 
-[tool.setuptools]
-package-dir = {"" = "src"}
-py-modules = ["config"]
-packages = ["data", "models", "training", "tracking", "experiments", "monitoring"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src", "src.*"]
+namespaces = false

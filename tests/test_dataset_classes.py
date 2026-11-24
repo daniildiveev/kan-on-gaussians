@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import torch
 
-from data import (
+from src.data import (
     ConcreteDataset, CsvDataset, CsvSpec, DatasetSplits, TabularDataset, load_dataset,
 )
 
@@ -61,7 +61,7 @@ def test_incomplete_subclass_cannot_load(tmp_path):
 
 
 def test_registered_name_resolves_custom_dataset(tmp_path, monkeypatch):
-    from data import loader, register_dataset
+    from src.data import loader, register_dataset
 
     class LocalDataset(CsvDataset):
         filename = "table.csv"

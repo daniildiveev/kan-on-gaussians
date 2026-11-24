@@ -7,9 +7,9 @@ import pytest
 
 pytest.importorskip("mlflow")
 
-from config import ModelSettings, ResourceSettings, TrackingSettings, TrainingSettings
-from data import CsvSpec
-from experiments import ExperimentRunner, ExperimentSeries, SeriesSummary, Trial, TrialResult
+from src.config import ModelSettings, ResourceSettings, TrackingSettings, TrainingSettings
+from src.data import CsvSpec
+from src.experiments import ExperimentRunner, ExperimentSeries, SeriesSummary, Trial, TrialResult
 
 
 @pytest.fixture
@@ -24,8 +24,13 @@ def local_series(tmp_path, monkeypatch):
     return runner, args
 
 
-def test_series_in_fresh_processes_and_resume(local_series):
+def test_series_in_fresh_processes_and_resume(local_series, tmp_path, monkeypatch):
     runner, args = local_series
+    work = tmp_path / "kernel"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    # A same-named module in the kernel directory must not shadow the worker's checkout.
+    (work / "src.py").write_text("raise RuntimeError('wrong src')\n")
     original_threads = os.environ.get("OMP_NUM_THREADS")
     summary = runner.run(**args, max_runs=2)
     assert [r.trial.model for r in summary.results] == args["models"]

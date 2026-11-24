@@ -8,10 +8,35 @@ from pydantic import ValidationError
 from torch import nn
 from torch.utils.data import TensorDataset
 
-from config import ModelSettings, TrainingSettings
-from data import CsvSpec, DatasetSplits, load_dataset
-from models import make_model
-from training import Trainer, evaluate, fit
+from src.config import ModelSettings, TrainingSettings
+from src.data import CsvSpec, DatasetSplits, load_dataset
+from src.models import make_model
+from src.paths import project_path
+from src.training import Trainer, evaluate, fit
+
+
+@pytest.mark.parametrize("model_name", ["mlp", "mgs_kan"])
+def test_load_legacy_checkpoint_from_another_directory(model_name, tmp_path, monkeypatch):
+    from src import paths
+    from src.training import Checkpoint
+
+    work = tmp_path / "kernel"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    monkeypatch.setattr(paths, "PROJECT_ROOT", tmp_path)
+
+    weights = make_model(model_name)
+    snapshot = Checkpoint.capture(weights, torch.optim.Adam(weights.parameters()), 1)
+    snapshot.save("results/best.pt")
+    path = tmp_path / "results" / "best.pt"
+    saved = torch.load(path, weights_only=True)
+    saved["model_class"] = saved["model_class"].removeprefix("src.")
+    torch.save(saved, path)
+
+    restored = Trainer(make_model(model_name))
+    assert restored.load_checkpoint("results/best.pt") == 1
+    torch.testing.assert_close(restored.model.state_dict(), weights.state_dict())
+    assert project_path(path) == path
 
 
 @pytest.mark.parametrize("name", ["mlp", "mgs_kan"])

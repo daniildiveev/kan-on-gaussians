@@ -12,14 +12,14 @@ from time import monotonic, sleep
 
 import torch
 
-from config import ModelSettings, ResourceSettings, TrackingSettings, TrainingSettings
-from data import CsvSpec, DatasetSplits, load_dataset
-from models import make_model
-from tracking import MlflowTracker
-from tracking.provenance import SourceVersion
-from training import Trainer
-from training.trainer import _resolve_device
-from .failures import failure_reason
+from src.config import ModelSettings, ResourceSettings, TrackingSettings, TrainingSettings
+from src.data import CsvSpec, DatasetSplits, load_dataset
+from src.models import make_model
+from src.tracking import MlflowTracker
+from src.tracking.provenance import SourceVersion
+from src.training import Trainer
+from src.training.trainer import _resolve_device
+from src.experiments.failures import failure_reason
 
 
 def _cpu_model() -> str:

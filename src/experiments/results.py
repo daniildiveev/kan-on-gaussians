@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from statistics import fmean
 
-from .series import Trial
+from src.experiments.series import Trial
 
 
 @dataclass(frozen=True)

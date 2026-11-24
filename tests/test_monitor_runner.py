@@ -4,10 +4,10 @@ pytest.importorskip("mlflow")
 
 
 def test_real_series_sends_progress_and_resume(tmp_path, monkeypatch):
-    from config import MonitorSettings, TrackingSettings, TrainingSettings
-    from data import CsvSpec
-    from experiments import ExperimentRunner
-    from monitoring.client import MonitorSession
+    from src.config import MonitorSettings, TrackingSettings, TrainingSettings
+    from src.data import CsvSpec
+    from src.experiments import ExperimentRunner
+    from src.monitoring.client import MonitorSession
 
     monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
     path = tmp_path / "table.csv"
@@ -55,7 +55,7 @@ def test_real_series_sends_progress_and_resume(tmp_path, monkeypatch):
 def test_worker_failure_code_from_wrapped_mlflow_timeout():
     from mlflow.exceptions import MlflowException
     from requests.exceptions import Timeout
-    from experiments.failures import failure_reason
+    from src.experiments.failures import failure_reason
 
     try:
         raise Timeout()
@@ -67,9 +67,9 @@ def test_worker_failure_code_from_wrapped_mlflow_timeout():
 
 
 def test_interrupt_after_registration_closes_session(tmp_path, monkeypatch):
-    from config import MonitorSettings, TrackingSettings
-    from experiments import ExperimentRunner
-    from monitoring.client import MonitorSession
+    from src.config import MonitorSettings, TrackingSettings
+    from src.experiments import ExperimentRunner
+    from src.monitoring.client import MonitorSession
 
     monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
     received = []
@@ -102,9 +102,9 @@ def test_worker_secrets_and_failed_trial_context(tmp_path, monkeypatch):
     from pathlib import Path
     from unittest.mock import Mock
 
-    from config import TrackingSettings
-    from experiments import ExperimentRunner
-    from monitoring.client import MonitorSession
+    from src.config import TrackingSettings
+    from src.experiments import ExperimentRunner
+    from src.monitoring.client import MonitorSession
 
     monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
     monkeypatch.setenv("MGS_KAN_MONITOR_TOKEN", "worker-must-not-see-this")

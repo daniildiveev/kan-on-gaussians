@@ -1,36 +1,47 @@
-from pathlib import Path
+import json
+import subprocess
 import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
 import torch
 from torch.utils.data import DataLoader
 
-from config import ModelSettings
-from data import load_dataset
-from models import make_model
+from src.config import ModelSettings
+from src.data import load_dataset
+from src.models import make_model
 
 
 FILENAME = "concrete_compressive_strength.csv"
 
 
-def test_matches_archived_protocol(tmp_path, concrete_csv, monkeypatch):
+def test_matches_archived_protocol(tmp_path, concrete_csv):
     archive_root = Path(__file__).resolve().parents[1] / "archive"
-    monkeypatch.syspath_prepend(str(archive_root.parent))
-    monkeypatch.syspath_prepend(str(archive_root))
-    # The archived scripts import their sibling modules as "experiments".
-    from archive import experiments as archived_experiments
-
-    monkeypatch.setitem(sys.modules, "experiments", archived_experiments)
-    from archive.experiments import concrete_order as archive
-
     path = tmp_path / FILENAME
     path.write_bytes(concrete_csv)
     table = np.loadtxt(path, delimiter=",", skiprows=1)
     x, y = table[:, :-1].copy(), table[:, -1]
     _, groups = np.unique(x[:, :7], axis=0, return_inverse=True)
     x[:, -1] = np.log1p(x[:, -1])
-    for fold, indices in enumerate(archive._folds(groups)):
+    # The historical study imports its own src package in its original working directory.
+    script = """
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path.cwd().parent))
+from archive import experiments, src
+sys.modules.update(experiments=experiments, src=src)
+
+from experiments.concrete_order import _folds
+print(json.dumps(_folds(json.load(sys.stdin))))
+"""
+    archived_splits = subprocess.check_output(
+        [sys.executable, "-c", script], cwd=archive_root,
+        input=json.dumps(groups.tolist()), text=True,
+    )
+    for fold, indices in enumerate(json.loads(archived_splits)):
         data = load_dataset("concrete", root=tmp_path, fold=fold)
         assert data.n_features == 8
         train_x = x[indices["train"]]

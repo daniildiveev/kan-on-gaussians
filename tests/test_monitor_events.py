@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 
 def test_monitor_event_contract():
-    from monitoring.events import MonitorEvent
+    from src.monitoring.events import MonitorEvent
 
     values = dict(session_id=uuid4(), series_id="demo", sequence=1, kind="started",
                   total=10, device="cuda:1")

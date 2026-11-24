@@ -14,11 +14,11 @@ from mlflow.entities import Metric, Param
 from mlflow.exceptions import MlflowException
 from torch import nn
 
-from config import DEFAULT_CHECKPOINT_FILE, ModelSettings, TrackingSettings, TrainingSettings
-from data import DatasetSplits
-from models import parameter_count
+from src.config import DEFAULT_CHECKPOINT_FILE, ModelSettings, TrackingSettings, TrainingSettings
+from src.data import DatasetSplits
+from src.models import parameter_count
 
-from .provenance import SourceVersion
+from src.tracking.provenance import SourceVersion
 
 _CHECKPOINT_TAG = "mgs_kan.checkpoint_file"
 

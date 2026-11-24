@@ -12,7 +12,8 @@ class SourceVersion:
 
     def tags(self) -> dict[str, str]:
         packages = ("data", "experiments", "models", "monitoring", "tracking", "training")
-        files = [self.root / "config.py"]
+        modules = ("__init__.py", "config.py", "paths.py")
+        files = [self.root / name for name in modules if (self.root / name).is_file()]
         for name in packages:
             files.extend((self.root / name).rglob("*.py"))
 
@@ -27,7 +28,7 @@ class SourceVersion:
             try:
                 commit = self._git("rev-parse", "HEAD")
                 changes = self._git("--no-optional-locks", "status", "--porcelain", "--",
-                                    "config.py", *packages)
+                                    *modules, *packages)
             except (OSError, subprocess.CalledProcessError):
                 return tags
             tags["mlflow.source.git.commit"] = commit

@@ -4,8 +4,8 @@ import pytest
 
 
 def test_heartbeat_while_runner_is_blocked_and_final_retry(monkeypatch, tmp_path):
-    from config import MonitorSettings
-    from monitoring.client import MonitorSession
+    from src.config import MonitorSettings
+    from src.monitoring.client import MonitorSession
 
     received = Event()
     sent = []
@@ -36,8 +36,8 @@ def test_heartbeat_while_runner_is_blocked_and_final_retry(monkeypatch, tmp_path
 
 
 def test_retry_registration_and_disabled_mode(monkeypatch, caplog):
-    from config import MonitorSettings
-    from monitoring.client import MonitorSession
+    from src.config import MonitorSettings
+    from src.monitoring.client import MonitorSession
 
     sent = []
 
@@ -63,7 +63,7 @@ def test_retry_registration_and_disabled_mode(monkeypatch, caplog):
 
 
 def test_endpoint_requires_https_and_secret():
-    from config import MonitorSettings
+    from src.config import MonitorSettings
     from pydantic import ValidationError
 
     for url in ("http://local/v1/events", "https://name:password@local/v1/events"):
@@ -75,8 +75,8 @@ def test_endpoint_requires_https_and_secret():
 
 def test_stalled_transport_cannot_hold_up_training_or_shutdown(monkeypatch):
     from threading import Thread
-    from config import MonitorSettings
-    from monitoring.client import MonitorSession
+    from src.config import MonitorSettings
+    from src.monitoring.client import MonitorSession
 
     release = Event()
     entered = Event()

@@ -6,11 +6,11 @@ from pydantic import ValidationError
 from torch import nn
 from torch.utils.data import TensorDataset
 
-from config import ModelSettings, TrainingSettings
-from data import DatasetSplits
-from models import make_model
-from training import Trainer, evaluate
-from training.trainer import _resolve_device
+from src.config import ModelSettings, TrainingSettings
+from src.data import DatasetSplits
+from src.models import make_model
+from src.training import Trainer, evaluate
+from src.training.trainer import _resolve_device
 
 
 @pytest.mark.parametrize(("cuda", "mps", "expected"), [

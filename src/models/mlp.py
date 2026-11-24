@@ -2,8 +2,8 @@ from collections import OrderedDict
 
 from torch import nn
 
-from config import ModelSettings
-from .initialization import initialize_weights
+from src.config import ModelSettings
+from src.models.initialization import initialize_weights
 
 
 class MLP(nn.Sequential):

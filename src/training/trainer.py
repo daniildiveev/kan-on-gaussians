@@ -15,12 +15,13 @@ from torch import nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
-from .checkpoint import Checkpoint
-from config import TrainingSettings
-from data import DatasetSplits
+from src.config import TrainingSettings
+from src.data import DatasetSplits
+from src.paths import project_path
+from src.training.checkpoint import Checkpoint
 
 if TYPE_CHECKING:
-    from tracking import MlflowRun, MlflowTracker
+    from src.tracking import MlflowRun, MlflowTracker
 
 
 @dataclass(frozen=True)
@@ -212,7 +213,7 @@ class Trainer:
                 raise ValueError("Loading by run_id requires an MLflow tracker")
             content = self.tracker.download_checkpoint(run_id)
         else:
-            content = Path(path).read_bytes()
+            content = project_path(path).read_bytes()
 
         checkpoint = Checkpoint(content)
         epoch = checkpoint.restore(self.model, optimizer)

@@ -7,8 +7,8 @@ from http.client import HTTPSConnection
 from threading import Event, Lock, Thread
 from uuid import uuid4
 
-from config import MonitorSettings
-from .events import DiskSample, Kind, MonitorEvent, Reason, TrialSnapshot
+from src.config import MonitorSettings
+from src.monitoring.events import DiskSample, Kind, MonitorEvent, Reason, TrialSnapshot
 
 
 class MonitorSession:
