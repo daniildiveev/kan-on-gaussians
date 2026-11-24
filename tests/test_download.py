@@ -5,7 +5,7 @@ from urllib import request
 import pytest
 import torch
 
-from mgs_kan.data import CsvSpec, load_dataset
+from data import CsvSpec, load_dataset
 
 
 FILENAME = "concrete_compressive_strength.csv"

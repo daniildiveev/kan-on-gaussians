@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import torch
 
-from mgs_kan.data import CsvSpec, load_dataset
+from data import CsvSpec, load_dataset
 
 
 HOUSES = CsvSpec(filename="houses.csv", target="price")

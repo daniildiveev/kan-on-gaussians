@@ -8,10 +8,10 @@ from pydantic import ValidationError
 from torch import nn
 from torch.utils.data import TensorDataset
 
-from mgs_kan.config import ModelSettings, TrainingSettings
-from mgs_kan.data import CsvSpec, DatasetSplits, load_dataset
-from mgs_kan.models import make_model
-from mgs_kan.training import Trainer, evaluate, fit
+from config import ModelSettings, TrainingSettings
+from data import CsvSpec, DatasetSplits, load_dataset
+from models import make_model
+from training import Trainer, evaluate, fit
 
 
 @pytest.mark.parametrize("name", ["mlp", "mgs_kan"])

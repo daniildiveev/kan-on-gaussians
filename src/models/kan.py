@@ -1,26 +1,8 @@
-"""Scalar regressors. Model construction is independent of the target generator."""
-
-from contextlib import contextmanager
-
 import torch
 from torch import nn
 
-from .config import ModelSettings
-
-
-@contextmanager
-def _initialize(model: nn.Module, seed: int | None):
-    if seed is None:
-        yield
-        return
-
-    # Seed only CPU initialization, then place weights on the caller's default device.
-    device = torch.empty(0).device
-    with torch.random.fork_rng(devices=[]), torch.device("cpu"):
-        torch.default_generator.manual_seed(seed)
-        yield
-    if device.type != "cpu":
-        model.to(device)
+from config import ModelSettings
+from .initialization import initialize_weights
 
 
 class MGS_KAN(nn.Module):
@@ -31,7 +13,7 @@ class MGS_KAN(nn.Module):
         if settings is None:
             settings = ModelSettings()
         self.model_settings = settings
-        with _initialize(self, settings.init_seed):
+        with initialize_weights(self, settings.init_seed):
             self._init_parameters(settings)
 
     def _init_parameters(self, settings: ModelSettings) -> None:
@@ -79,26 +61,3 @@ class MGS_KAN(nn.Module):
 
     def group_penalty(self):
         return torch.linalg.vector_norm(self.pair_amplitude, dim=1).sum()
-
-
-def make_model(name: str, settings: ModelSettings | None = None):
-    if name == "mgs_kan":
-        return MGS_KAN(settings)
-    if name != "mlp":
-        raise ValueError(f"Unknown model {name!r}")
-    if settings is None:
-        settings = ModelSettings()
-    model = nn.Sequential()
-    with _initialize(model, settings.init_seed):
-        model.extend([
-            nn.Linear(settings.features, settings.mlp_width), nn.ReLU(),
-            nn.Linear(settings.mlp_width, settings.mlp_width), nn.ReLU(),
-            nn.Linear(settings.mlp_width, 1), nn.Flatten(start_dim=0),
-        ])
-    model.model_name = "mlp"
-    model.model_settings = settings
-    return model
-
-
-def parameter_count(model):
-    return sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)

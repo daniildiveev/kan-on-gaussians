@@ -1,21 +1,28 @@
 from pathlib import Path
+import sys
 
 import numpy as np
 import pytest
 import torch
 from torch.utils.data import DataLoader
 
-from mgs_kan.config import ModelSettings
-from mgs_kan.data import load_dataset
-from mgs_kan.models import make_model
+from config import ModelSettings
+from data import load_dataset
+from models import make_model
 
 
 FILENAME = "concrete_compressive_strength.csv"
 
 
 def test_matches_archived_protocol(tmp_path, concrete_csv, monkeypatch):
-    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "archive"))
-    from experiments import concrete_order as archive
+    archive_root = Path(__file__).resolve().parents[1] / "archive"
+    monkeypatch.syspath_prepend(str(archive_root.parent))
+    monkeypatch.syspath_prepend(str(archive_root))
+    # The archived scripts import their sibling modules as "experiments".
+    from archive import experiments as archived_experiments
+
+    monkeypatch.setitem(sys.modules, "experiments", archived_experiments)
+    from archive.experiments import concrete_order as archive
 
     path = tmp_path / FILENAME
     path.write_bytes(concrete_csv)

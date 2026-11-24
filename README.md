@@ -15,6 +15,10 @@ protocols, training code and recorded results live in the archive.
 
 ## Install and check
 
+When upgrading an existing notebook environment, reinstall the editable project and
+restart the kernel. Import directly from `data`, `models`, `training`, `tracking`,
+`experiments` and `config`. The pip distribution name is `mgs-kan`.
+
 Use Python 3.11+ in a project environment. Install the test extra to run pytest.
 For historical notebook environments, see the archive guide.
 
@@ -25,8 +29,8 @@ python -m pytest
 
 ```python
 import torch
-from mgs_kan.config import ModelSettings
-from mgs_kan.models import make_model
+from config import ModelSettings
+from models import make_model
 
 model = make_model("mgs_kan", ModelSettings(features=8))
 with torch.no_grad():
@@ -42,9 +46,9 @@ Explicit field values override environment variables. Defaults reproduce the stu
 ```python
 import torch
 from torch.utils.data import DataLoader
-from mgs_kan.config import ModelSettings
-from mgs_kan.data import CsvSpec, load_dataset
-from mgs_kan.models import make_model
+from config import ModelSettings
+from data import CsvSpec, load_dataset
+from models import make_model
 
 data = load_dataset("concrete", root="data", fold=0, download=True)
 model = make_model("mlp", ModelSettings(features=data.n_features))
@@ -73,7 +77,7 @@ For a reusable numeric table, give a `CsvDataset` subclass its filename and
 target column. The returned object is an instance of that subclass.
 
 ```python
-from mgs_kan.data import CsvDataset, register_dataset
+from data import CsvDataset, register_dataset
 
 class HousingDataset(CsvDataset):
     filename = "houses.csv"
@@ -99,10 +103,10 @@ same dataset type. Name registrations last for the current Python process.
 
 ```python
 import torch
-from mgs_kan.config import ModelSettings, TrainingSettings
-from mgs_kan.data import load_dataset
-from mgs_kan.models import make_model
-from mgs_kan.training import Trainer
+from config import ModelSettings, TrainingSettings
+from data import load_dataset
+from models import make_model
+from training import Trainer
 
 data = load_dataset("concrete", fold=0, download=True)
 settings = TrainingSettings(device="auto", seed=42, epochs=50, batch_size=64)
@@ -163,8 +167,8 @@ an experiment (default `mgs-kan`). The client uses standard MLflow credentials
 from the kernel environment if the server requires authentication.
 
 ```python
-from mgs_kan.config import TrackingSettings
-from mgs_kan.tracking import MlflowTracker
+from config import TrackingSettings
+from tracking import MlflowTracker
 
 tracker = MlflowTracker(TrackingSettings(_env_file=".env"))
 trainer = Trainer(model, settings, tracker=tracker)
@@ -220,9 +224,60 @@ For a tracked run, construct the destination trainer with `tracker=tracker` and
 call `restored.load_checkpoint(run_id=result.run_id, optimizer=optimizer)`.
 A subsequent `fit` starts a new run and a new epoch count from the loaded state.
 
+### Run a fold and seed series from Jupyter
+
+Install the tracking extra in the kernel environment and configure its MLflow URI.
+Cache the dataset under `root`, or pass `download=True` to allow the initial download.
+
+```python
+from config import ResourceSettings, TrackingSettings, TrainingSettings
+from experiments import ExperimentRunner
+
+runner = ExperimentRunner(
+    training=TrainingSettings(epochs=50, batch_size=64),
+    resources=ResourceSettings(_env_file=".env"),
+    tracking=TrackingSettings(_env_file=".env"),
+)
+summary = runner.run(
+    series_id="concrete-baselines-v1",
+    dataset="concrete",
+    root="data",
+    models=["mlp", "mgs_kan"],
+    folds=[0, 1, 2, 3, 4],
+    seeds=[(11, 101), (22, 202), (33, 303)],
+    device="cuda:1",
+    max_runs=30,
+)
+summary.by_model
+```
+
+Each seed pair gives the model initialization and batch shuffle seeds. Each
+combination starts a fresh Python process, trains with Adam, restores the
+best validation epoch and evaluates the test fold. Use `device="cpu"` for
+a local test. CUDA indices follow the kernel's existing visible-device order.
+Set `MGS_KAN_SERIES_CPU_THREADS` (default 2) and
+`MGS_KAN_SERIES_GPU_MEMORY_FRACTION` (default 0.25) to limit worker threads
+and the CUDA allocator. Other users can consume memory on the same GPU.
+
+`max_runs` caps the full grid. `time_budget_seconds` lets a running trial
+finish and defers the next one. Errors stop the series and identify the
+combination. Repeat the call with the same series ID and MLflow experiment to
+reuse completed evaluations. Run one controller per series ID. Keep the same
+dataset contents, code, grid, training protocol, device model and thread count.
+You can change the GPU index on identical cards or adjust the memory ceiling.
+MLflow records each attempt under the tag `mgs_kan.series`.
+
+`summary.results` contains individual run IDs and scores, and `summary.pending`
+contains the remaining combinations. `summary.by_model` reports coverage
+and averages the available seed repeats within each fold before averaging
+across folds. R² uses only folds with defined scores.
+
 ## Repository layout
 
-- `src/mgs_kan/` contains the scalar model factory and its original settings.
+- `src/config.py` contains Pydantic settings for models, training, tracking and resources.
+- `src/data/` loads and splits tabular data. `src/models/` contains the model classes and factory.
+- `src/training/` owns single-model training and checkpoints. `src/tracking/` owns MLflow runs and history.
+- `src/experiments/` defines series, workers, the notebook runner and result summaries.
 - `tests/` covers both scalar models, dataset preprocessing and offline download behavior.
 - `archive/` retains the previous working directory layout. It includes four
   notebooks, both scalar study protocols, geometry and interaction-order

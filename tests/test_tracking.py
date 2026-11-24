@@ -6,16 +6,16 @@ import numpy as np
 import pytest
 import torch
 
-from mgs_kan.config import ModelSettings, TrackingSettings, TrainingSettings
-from mgs_kan.data import CsvSpec, load_dataset
-from mgs_kan.models import make_model
-from mgs_kan.training import Trainer
+from config import ModelSettings, TrackingSettings, TrainingSettings
+from data import CsvSpec, load_dataset
+from models import make_model
+from training import Trainer
 
 
 @pytest.fixture
 def tracker(tmp_path, monkeypatch):
     pytest.importorskip("mlflow")
-    from mgs_kan.tracking import MlflowTracker
+    from tracking import MlflowTracker
 
     monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
     uri = (tmp_path / "runs").as_uri()
@@ -110,21 +110,30 @@ def test_replay_from_logged_seeds_and_optimizer_options(tracker, data):
     assert actual.validation_rmse == result.validation_rmse
 
 
-def test_source_digest_without_git(tracker, tmp_path):
-    from mgs_kan.tracking import _code_tags
+def test_source_digest_without_git(tmp_path):
+    pytest.importorskip("mlflow")
+    from tracking.provenance import SourceVersion
 
-    package = tmp_path / "package"
+    config = tmp_path / "config.py"
+    config.write_text("epochs = 2\n")
+    package = tmp_path / "models"
     package.mkdir()
-    source = package / "model.py"
+    source = package / "mlp.py"
     source.write_text("width = 4\n")
-    first = _code_tags(package)
+    version = SourceVersion(tmp_path)
+    first = version.tags()
     assert set(first) == {"mgs_kan.source_sha256"}
+    (tmp_path / "other.py").write_text("x = 1\n")
+    assert version.tags() == first
     source.write_text("width = 8\n")
-    assert _code_tags(package) != first
+    second = version.tags()
+    assert second != first
+    config.write_text("epochs = 3\n")
+    assert version.tags() != second
 
 
 def test_restore_checkpoint_from_an_earlier_run(tracker, data, tmp_path):
-    from mgs_kan.tracking import MlflowTracker
+    from tracking import MlflowTracker
 
     settings = TrainingSettings(device="cpu", epochs=3)
     trainer = Trainer(torch.nn.Linear(1, 1), settings, tracker=tracker)

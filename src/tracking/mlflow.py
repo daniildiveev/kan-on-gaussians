@@ -1,11 +1,9 @@
 """Record training runs on an existing MLflow tracking server."""
 
 import json
-import subprocess
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from hashlib import sha256
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import time
@@ -16,35 +14,13 @@ from mlflow.entities import Metric, Param
 from mlflow.exceptions import MlflowException
 from torch import nn
 
-from .config import DEFAULT_CHECKPOINT_FILE, ModelSettings, TrackingSettings, TrainingSettings
-from .data import DatasetSplits
-from .models import parameter_count
+from config import DEFAULT_CHECKPOINT_FILE, ModelSettings, TrackingSettings, TrainingSettings
+from data import DatasetSplits
+from models import parameter_count
+
+from .provenance import SourceVersion
 
 _CHECKPOINT_TAG = "mgs_kan.checkpoint_file"
-
-
-def _code_tags(package: Path) -> dict[str, str]:
-    digest = sha256()
-    for path in sorted(package.rglob("*.py")):
-        digest.update(path.relative_to(package).as_posix().encode() + b"\0")
-        digest.update(sha256(path.read_bytes()).digest())
-    tags = {"mgs_kan.source_sha256": digest.hexdigest()}
-
-    # An installed wheel may be inside an unrelated project's checkout.
-    if package.parent.name == "src" and (package.parent.parent / ".git").exists():
-        try:
-            commit = subprocess.check_output(
-                ["git", "rev-parse", "HEAD"], cwd=package, stderr=subprocess.DEVNULL, text=True
-            )
-            status = subprocess.check_output(
-                ["git", "--no-optional-locks", "status", "--porcelain", "--", "."],
-                cwd=package, stderr=subprocess.DEVNULL, text=True,
-            )
-        except (OSError, subprocess.CalledProcessError):
-            return tags
-        tags["mlflow.source.git.commit"] = commit.strip()
-        tags["mgs_kan.source_dirty"] = "true" if status else "false"
-    return tags
 
 
 def _optimizer_params(optimizer: torch.optim.Optimizer) -> dict[str, str]:
@@ -78,9 +54,11 @@ class MlflowRun:
 
 
 class MlflowTracker:
-    def __init__(self, settings: TrackingSettings | None = None):
+    def __init__(self, settings: TrackingSettings | None = None, *, run_tags: dict[str, str] | None = None):
         self.settings = settings or TrackingSettings()
         self.client = MlflowClient(tracking_uri=self.settings.tracking_uri)
+        self.run_tags = dict(run_tags or {})
+        self.last_run_id: str | None = None
 
     def download_checkpoint(self, run_id: str) -> bytes:
         tags = self.client.get_run(run_id).data.tags
@@ -89,6 +67,55 @@ class MlflowTracker:
         with TemporaryDirectory() as directory:
             path = self.client.download_artifacts(run_id, filename, directory)
             return Path(path).read_bytes()
+
+    def trial_scores(self, run_id: str) -> dict:
+        return self._scores(self.client.get_run(run_id))
+
+    @staticmethod
+    def _scores(run) -> dict:
+        metrics = run.data.metrics
+        return {
+            "run_id": run.info.run_id,
+            "best_epoch": int(metrics["best_epoch"]),
+            "test_rmse": metrics["test_rmse"],
+            "test_r2": metrics.get("test_r2"),
+        }
+
+    def completed_trials(self, series_key: str) -> dict:
+        """Read reusable evaluations and protocol IDs for this series."""
+        experiment_id = self._experiment_id()
+        completed = {}
+        protocols = set()
+        token = None
+        while True:
+            runs = self.client.search_runs(
+                [experiment_id],
+                filter_string=f"tags.`mgs_kan.series_key` = '{series_key}'",
+                page_token=token,
+                order_by=["attributes.start_time DESC"],
+            )
+            for run in runs:
+                tags = run.data.tags
+                key = tags.get("mgs_kan.trial")
+                protocol = tags.get("mgs_kan.protocol")
+                # FileStore may be interrupted halfway through creating a tagged run.
+                if not key or not protocol:
+                    continue
+                protocols.add(protocol)
+                if key not in completed and self._is_complete(run):
+                    completed[key] = self._scores(run)
+            token = runs.token
+            if not token:
+                return {"completed": completed, "protocols": sorted(protocols)}
+
+    def _is_complete(self, run) -> bool:
+        if run.info.status != "FINISHED" or run.data.tags.get("mgs_kan.evaluated") != "true":
+            return False
+        if not {"test_rmse", "best_epoch"}.issubset(run.data.metrics):
+            return False
+        filename = run.data.tags.get(_CHECKPOINT_TAG, DEFAULT_CHECKPOINT_FILE)
+        files = self.client.list_artifacts(run.info.run_id)
+        return any(file.path == filename and not file.is_dir for file in files)
 
     def _experiment_id(self) -> str:
         name = self.settings.experiment_name
@@ -133,10 +160,11 @@ class MlflowTracker:
         params.update(_optimizer_params(optimizer))
 
         filename = self.settings.checkpoint_file
-        tags = _code_tags(Path(__file__).resolve().parent)
+        tags = {**self.run_tags, **SourceVersion().tags()}
         tags[_CHECKPOINT_TAG] = filename
         run = self.client.create_run(self._experiment_id(), tags=tags)
         run_id = run.info.run_id
+        self.last_run_id = run_id
         try:
             self.client.log_batch(
                 run_id, params=[Param(k, str(v)) for k, v in params.items() if v is not None]
@@ -145,8 +173,13 @@ class MlflowTracker:
         except KeyboardInterrupt:
             self.client.set_terminated(run_id, status="KILLED")
             raise
-        except Exception:
-            self.client.set_terminated(run_id, status="FAILED")
+        except Exception as error:
+            try:
+                self.client.set_terminated(run_id, status="FAILED")
+                if self.run_tags:
+                    self.client.set_tag(run_id, "mgs_kan.failure", str(error)[:1000])
+            except Exception as tracking_error:
+                error.add_note(f"Could not record the MLflow failure: {tracking_error}")
             raise
         else:
             self.client.set_terminated(run_id, status="FINISHED")

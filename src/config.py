@@ -59,3 +59,14 @@ class TrackingSettings(BaseSettings):
         if not name or name == ".." or "\x00" in name or PureWindowsPath(name).name != name:
             raise ValueError("Expected a checkpoint filename without directories")
         return name
+
+
+class ResourceSettings(BaseSettings):
+    """Per-worker CPU threads and fraction of the selected CUDA device's memory."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="MGS_KAN_SERIES_", frozen=True, allow_inf_nan=False, dotenv_filtering="only_existing"
+    )
+
+    cpu_threads: PositiveInt = 2
+    gpu_memory_fraction: float = Field(default=0.25, gt=0, le=1)

@@ -15,4 +15,5 @@ tracking = ["mlflow-skinny>=2.17,<4"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-packages = ["mgs_kan", "mgs_kan.data"]
+py-modules = ["config"]
+packages = ["data", "models", "training", "tracking", "experiments"]

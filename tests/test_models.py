@@ -4,8 +4,8 @@ import pytest
 import torch
 from pydantic import ValidationError
 
-from mgs_kan.config import ModelSettings
-from mgs_kan.models import make_model, parameter_count
+from config import ModelSettings
+from models import make_model, parameter_count
 
 
 @pytest.fixture(autouse=True)

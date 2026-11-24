@@ -15,12 +15,12 @@ from torch import nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
-from .checkpoints import encode_checkpoint, restore_checkpoint, write_checkpoint
-from .config import TrainingSettings
-from .data import DatasetSplits
+from .checkpoint import Checkpoint
+from config import TrainingSettings
+from data import DatasetSplits
 
 if TYPE_CHECKING:
-    from .tracking import MlflowRun, MlflowTracker
+    from tracking import MlflowRun, MlflowTracker
 
 
 @dataclass(frozen=True)
@@ -85,7 +85,7 @@ class Trainer:
         self._last_run: MlflowRun | None = None
         self._fitted_data: DatasetSplits | None = None
         self._best_epoch = 0
-        self._checkpoint: bytes | None = None
+        self._checkpoint: Checkpoint | None = None
         if settings is None:
             tensor = next(chain(model.parameters(), model.buffers()), None)
             self.device = torch.device("cpu") if tensor is None else tensor.device
@@ -181,9 +181,9 @@ class Trainer:
         )
         with context as run:
             result = self._fit_epochs(data, optimizer, settings, run)
-            checkpoint = encode_checkpoint(self.model, optimizer, result.best_epoch)
+            checkpoint = Checkpoint.capture(self.model, optimizer, result.best_epoch)
             if run is not None:
-                run.upload_checkpoint(checkpoint)
+                run.upload_checkpoint(checkpoint.content)
         self._checkpoint = checkpoint
         if run is not None:
             self._last_run = run
@@ -195,7 +195,7 @@ class Trainer:
         """Save the best epoch from the last successful fit or load."""
         if self._checkpoint is None:
             raise RuntimeError("Fit the model or load a checkpoint before saving")
-        write_checkpoint(Path(path), self._checkpoint)
+        self._checkpoint.save(path)
 
     def load_checkpoint(
         self,
@@ -214,8 +214,9 @@ class Trainer:
         else:
             content = Path(path).read_bytes()
 
-        epoch = restore_checkpoint(content, self.model, optimizer)
-        self._checkpoint = content
+        checkpoint = Checkpoint(content)
+        epoch = checkpoint.restore(self.model, optimizer)
+        self._checkpoint = checkpoint
         self._best_epoch = epoch
         self._last_run = None
         self._fitted_data = None
