@@ -82,18 +82,17 @@ class MlflowTracker:
             "best_val_rmse": metrics.get("best_val_rmse"),
         }
 
-    def completed_trials(self, series_key: str) -> dict:
-        """Read reusable evaluations and protocol IDs for this series."""
+    def completed_trials(self, series_key: str, evaluation: str | None = None) -> dict:
+        """Read completed trials and their recorded protocols, optionally restricted by evaluation mode."""
         completed = {}
         protocols = set()
         for run in self._search_runs(f"tags.`mgs_kan.series_key` = '{series_key}'"):
             tags = run.data.tags
             key = tags.get("mgs_kan.trial")
-            protocol = tags.get("mgs_kan.protocol")
-            # FileStore may be interrupted halfway through creating a tagged run.
-            if not key or not protocol:
+            if not key or (evaluation is not None and tags.get("mgs_kan.evaluation", "test") != evaluation):
                 continue
-            protocols.add(protocol)
+            if protocol := tags.get("mgs_kan.protocol"):
+                protocols.add(protocol)
             if key not in completed and self._is_complete(run):
                 completed[key] = self._scores(run)
         return {"completed": completed, "protocols": sorted(protocols)}
@@ -107,7 +106,7 @@ class MlflowTracker:
             trial = tags.get("mgs_kan.trial")
             if series not in planned or trial not in planned[series] or trial in found[series]:
                 continue
-            if tags.get("mgs_kan.protocol") and self._is_complete(run):
+            if self._is_complete(run):
                 found[series].add(trial)
         return {key: len(trials) for key, trials in found.items()}
 
