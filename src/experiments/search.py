@@ -149,7 +149,7 @@ class ValidationGrid(BaseModel):
         started = monotonic()
         grid_id = f"{', '.join(self.datasets)} · {version}"
         total = self.size
-        session = MonitorSession(monitoring, grid_id, total, device, grid_id=grid_id)
+        session = MonitorSession(monitoring, grid_id, total, device, grid_id=grid_id, started_at=started)
         try:
             session.start()
             runs = self._run_grid(session, version, device, tracking, resources, root, download)
@@ -164,13 +164,7 @@ class ValidationGrid(BaseModel):
         session.finish("finished", elapsed_seconds=int(monotonic() - started))
         return runs
 
-    def _run_grid(
-        self, session: MonitorSession, version: str, device: str, tracking: TrackingSettings,
-        resources: ResourceSettings, root: str | Path, download: bool,
-    ) -> pd.DataFrame:
-        rows = []
-        runner = ExperimentRunner(training=self.training, resources=resources, tracking=tracking,
-                                  monitoring=session.settings)
+    def _series_plan(self, version: str, device: str, resources: ResourceSettings):
         for dataset, label, columns, stage, settings in self.plan():
             suffix = f"-features-{label}" if columns is not None else ""
             series = ExperimentSeries(
@@ -179,16 +173,33 @@ class ValidationGrid(BaseModel):
                 seeds=self.seeds, device=device, evaluation="validation", training=self.training,
                 resources=resources, model_settings=settings,
             )
-            session.begin_series(series.series_id, len(rows))
+            yield label, stage.name, series
+
+    def _run_grid(
+        self, session: MonitorSession, version: str, device: str, tracking: TrackingSettings,
+        resources: ResourceSettings, root: str | Path, download: bool,
+    ) -> pd.DataFrame:
+        rows = []
+        runner = ExperimentRunner(training=self.training, resources=resources, tracking=tracking,
+                                  monitoring=session.settings)
+        plan = list(self._series_plan(version, device, resources))
+        cached = {}
+        if session.settings.endpoint is not None:
+            planned = {series.key: {trial.key for trial in series.trials()} for _, _, series in plan}
+            cached = runner.tracker.grid_completed_counts(planned)
+        remaining_cached = sum(cached.values())
+        for label, stage_name, series in plan:
+            session.begin_series(series.series_id, len(rows) + remaining_cached)
+            remaining_cached -= cached.get(series.key, 0)
             summary = runner.run_series(
-                series, session, root=root, download=download, completed_before=len(rows),
+                series, session, root=root, download=download, completed_before=len(rows) + remaining_cached,
             )
             for result in summary.results:
                 run = runner.tracker.client.get_run(result.run_id)
                 rows.append({
-                    "dataset": dataset, "feature_set": label,
+                    "dataset": series.dataset, "feature_set": label,
                     "feature_columns": run.data.params.get("feature_columns"),
-                    "n_features": int(run.data.params["n_features"]), "stage": stage.name, "model": result.trial.model,
+                    "n_features": int(run.data.params["n_features"]), "stage": stage_name, "model": result.trial.model,
                     "fold": result.trial.fold, "init_seed": result.trial.init_seed,
                     "shuffle_seed": result.trial.shuffle_seed, "best_epoch": result.best_epoch,
                     "val_rmse": result.best_val_rmse, "run_id": result.run_id,

@@ -3,6 +3,35 @@ from threading import Event
 import pytest
 
 
+def test_first_fresh_result_wakes_grid_monitor_before_next_heartbeat(monkeypatch):
+    from src.config import MonitorSettings
+    from src.experiments.results import TrialResult
+    from src.experiments.series import Trial
+    from src.monitoring.client import MonitorSession
+
+    sent = []
+    delivered = Event()
+
+    def post(session, event):
+        sent.append(event)
+        if event.kind == "heartbeat" and event.first_result:
+            delivered.set()
+        return 204
+
+    monkeypatch.setattr(MonitorSession, "_post", post)
+    settings = MonitorSettings(endpoint="https://monitor.test/v1/events", token="test")
+    session = MonitorSession(settings, "grid", 20, "cpu", grid_id="grid")
+    session.start()
+    try:
+        session.begin_series("stage", 12)
+        result = TrialResult(Trial("deep_mlp", 0, 1, 2), "fresh", 1, None, None, 0.25)
+        session.record_result(13, result)
+        assert delivered.wait(2)
+        assert sent[-1].first_result.run_id == "fresh" and sent[-1].milestones is None
+    finally:
+        session.finish("interrupted")
+
+
 def test_heartbeat_while_runner_is_blocked_and_final_retry(monkeypatch, tmp_path):
     from src.config import MonitorSettings
     from src.monitoring.client import MonitorSession

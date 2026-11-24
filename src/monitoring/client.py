@@ -1,14 +1,20 @@
 """Best-effort, ordered heartbeats from the parent notebook process."""
 
 import logging
+import math
 import shutil
 from contextlib import closing
 from http.client import HTTPSConnection
 from threading import Event, Lock, Thread
+from time import monotonic
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from src.config import MonitorSettings
-from src.monitoring.events import DiskSample, Kind, MonitorEvent, Reason, TrialSnapshot
+from src.monitoring.events import DiskSample, FirstResult, GridMilestone, Kind, MonitorEvent, Reason, TrialSnapshot
+
+if TYPE_CHECKING:
+    from src.experiments.results import TrialResult
 
 
 class MonitorSession:
@@ -16,12 +22,14 @@ class MonitorSession:
     io_timeout = 3
 
     def __init__(self, settings: MonitorSettings, series_id: str, total: int, device: str,
-                 *, grid_id: str | None = None):
+                 *, grid_id: str | None = None, started_at: float | None = None):
         self.settings = settings
         self.identity = dict(session_id=uuid4(), series_id=series_id[:160], total=total,
                              device=device[:64], grid_id=grid_id[:160] if grid_id else None)
         self._progress = {"completed": None, "trial": None, "run_id": None}
         self._lock = Lock()
+        self._started_at = monotonic() if started_at is None else started_at
+        self._wake = Event()
         self._stop = Event()
         self._first_attempt = Event()
         self._final_kind: Kind = "interrupted"
@@ -43,6 +51,32 @@ class MonitorSession:
             if completed is not None:
                 self._progress["completed"] = completed
             self._progress.update(trial=trial, run_id=run_id)
+
+    def record_result(self, completed: int, result: "TrialResult") -> None:
+        """Capture only newly trained results. Keep notices until the terminal snapshot."""
+        with self._lock:
+            self._progress.update(completed=completed, trial=None, run_id=None)
+            if self.identity["grid_id"] is None or self.settings.endpoint is None:
+                return
+            score = result.best_val_rmse
+            if "first_result" not in self._progress and score is not None and 0 <= score < math.inf:
+                self._progress["first_result"] = FirstResult(
+                    model=result.trial.model, fold=result.trial.fold, run_id=result.run_id, val_rmse=score,
+                )
+                self._wake.set()
+            total = self.identity["total"]
+            for percent in (25, 50, 75):
+                threshold = (percent * total + 99) // 100
+                if completed != threshold or completed == total:
+                    continue
+                milestones = self._progress.get("milestones", ())
+                if any(point.percent == percent for point in milestones):
+                    continue
+                point = GridMilestone(
+                    percent=percent, completed=completed, series_id=self.identity["series_id"],
+                    elapsed_seconds=int(monotonic() - self._started_at),
+                )
+                self._progress["milestones"] = (*milestones, point)
 
     def _snapshot(self, kind: Kind, reason: Reason | None = None) -> MonitorEvent:
         disk = None
@@ -103,7 +137,11 @@ class MonitorSession:
     def _deliver(self) -> None:
         self._register()
         self._first_attempt.set()
-        while not self._stop.wait(self.interval):
+        while True:
+            self._wake.wait(self.interval)
+            self._wake.clear()
+            if self._stop.is_set():
+                break
             if self._register():
                 self._send(self._snapshot("heartbeat"))
         final = self._snapshot(self._final_kind, self._final_reason)
@@ -120,6 +158,7 @@ class MonitorSession:
         with self._lock:
             self._progress["elapsed_seconds"] = elapsed_seconds
         self._stop.set()
+        self._wake.set()
         # Bound the caller's wait even if OS-level DNS resolution stalls.
         self._thread.join(2 * self.io_timeout)
         if self._thread.is_alive():

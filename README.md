@@ -287,9 +287,12 @@ layers with a ReLU in the residual branch.
 
 Select a visible GPU in the notebook. Reusing the same version and protocol
 resumes completed runs in MLflow. Each dataset and stage has its own series ID.
-Each call to `grid.run()` uses one heartbeat session. Telegram sends one English
-completion summary for the grid, including runs reused from MLflow and elapsed
-wall time since this call started. Failures and resource alerts identify the
+Each call to `grid.run()` uses one heartbeat session. Telegram announces the start,
+the first newly trained run with its validation RMSE, progress at 25%, 50% and
+75%, and completion. Counts include reusable MLflow runs across the grid.
+Resuming skips thresholds already reached. Thresholds reached on the final run
+are covered by the completion summary. Elapsed time starts with this call.
+Failures and resource alerts identify the
 active series. Update the heartbeat receiver in `vps-metrics` first. To resume a
 grid started on an older checkout, keep using its original source version.
 
