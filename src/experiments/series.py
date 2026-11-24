@@ -6,10 +6,11 @@ from hashlib import sha256
 from itertools import product
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.config import ModelSettings, ResourceSettings, TrainingSettings
-from src.data import CsvSpec
+from src.data import CsvSpec, dataset_class
+from src.models.factory import ModelName
 
 
 @dataclass(frozen=True)
@@ -35,7 +36,9 @@ class ExperimentSeries(BaseModel):
 
     series_id: str
     dataset: str | CsvSpec
-    models: tuple[Literal["mlp", "mgs_kan"], ...] = Field(min_length=1)
+    models: tuple[ModelName, ...] = Field(min_length=1)
+    feature_columns: tuple[str, ...] | None = None
+    evaluation: Literal["test", "validation"] = "test"
     folds: tuple[_Fold, ...] = Field(min_length=1)
     seeds: tuple[tuple[_Seed, _Seed], ...] = Field(min_length=1)
     device: str = Field(pattern=r"^(cpu|cuda:(0|[1-9][0-9]*))$")
@@ -57,6 +60,21 @@ class ExperimentSeries(BaseModel):
             raise ValueError("Models, folds and seed pairs must be unique")
         return values
 
+    @model_validator(mode="after")
+    def _supported_folds(self):
+        if isinstance(self.dataset, str):
+            reader = dataset_class(self.dataset)
+            supported = reader.available_folds
+            if self.feature_columns is not None:
+                cols = self.feature_columns
+                if not cols or len(set(cols)) != len(cols) or not set(cols).issubset(reader.columns):
+                    raise ValueError(f"Invalid feature columns for {self.dataset}: {cols}")
+            if not set(self.folds).issubset(supported):
+                raise ValueError(f"{self.dataset} supports folds {supported}")
+        elif self.feature_columns is not None:
+            raise ValueError("Named feature selection requires a registered dataset")
+        return self
+
     @property
     def key(self) -> str:
         return sha256(self.series_id.encode()).hexdigest()
@@ -74,7 +92,8 @@ class ExperimentSeries(BaseModel):
     def protocol(self, identity: dict) -> str:
         settings = {
             **identity,
-            **self.model_dump(include={"dataset"}),
+            **self.model_dump(include={"dataset", "feature_columns"}, exclude_none=True),
+            "evaluation": self.evaluation,
             "models": sorted(self.models),
             "folds": sorted(self.folds),
             "seeds": sorted(self.seeds),

@@ -3,6 +3,7 @@ from collections.abc import Callable
 from hashlib import file_digest
 from inspect import isabstract
 from pathlib import Path
+from shutil import copyfileobj
 from tempfile import TemporaryDirectory
 from typing import ClassVar, Self
 from urllib import request
@@ -21,6 +22,11 @@ class TabularDataset(DatasetSplits, ABC):
 
     filename: ClassVar[str]
     url: ClassVar[str | None] = None
+
+    @staticmethod
+    def group_ids(values: np.ndarray) -> np.ndarray:
+        """Keep observations with identical conditions in the same fold."""
+        return np.unique(values, axis=0, return_inverse=True)[1].reshape(-1)
 
     @classmethod
     @abstractmethod
@@ -85,8 +91,7 @@ class TabularDataset(DatasetSplits, ABC):
         path.parent.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(dir=path.parent) as staging:
             downloaded_path = Path(staging) / path.name
-            with request.urlopen(url, timeout=30) as response:
-                downloaded_path.write_bytes(response.read())
+            cls.fetch(url, downloaded_path)
 
             dataset = cls._load_file(downloaded_path, read, fold)
             try:
@@ -95,3 +100,8 @@ class TabularDataset(DatasetSplits, ABC):
                 # Another caller published its file first. Use that cached version.
                 return cls._load_file(path, read, fold)
             return dataset
+
+    @classmethod
+    def fetch(cls, url: str, destination: Path) -> None:
+        with request.urlopen(url, timeout=60) as response, destination.open("wb") as output:
+            copyfileobj(response, output)

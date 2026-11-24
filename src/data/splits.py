@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import Self
+from dataclasses import dataclass, replace
+from typing import ClassVar, Self
 
 import numpy as np
 import torch
@@ -8,6 +8,8 @@ from torch.utils.data import TensorDataset
 
 @dataclass(frozen=True)
 class DatasetSplits:
+    available_folds: ClassVar[tuple[int, ...]] = (0, 1, 2, 3, 4)
+    columns: ClassVar[tuple[str, ...]] = ()
     train: TensorDataset
     val: TensorDataset
     test: TensorDataset
@@ -18,6 +20,24 @@ class DatasetSplits:
     source_file: str | None = None
     source_sha256: str | None = None
     target_column: str | None = None
+
+    selected_features: tuple[str, ...] | None = None
+
+    def select_features(self, names: tuple[str, ...]) -> Self:
+        """Project existing partitions, retaining row order, targets and training statistics."""
+        available = self.selected_features or self.columns
+        if len(available) != self.n_features:
+            raise ValueError("Dataset requires a named schema matching its inputs")
+        if not names or len(set(names)) != len(names) or not set(names).issubset(available):
+            raise ValueError(f"Expected distinct columns from {available}, got {names}")
+        indices = [available.index(name) for name in names]
+
+        def project(partition: TensorDataset) -> TensorDataset:
+            features, target = partition.tensors
+            return TensorDataset(features[:, indices], target)
+
+        return replace(self, train=project(self.train), val=project(self.val), test=project(self.test),
+                       n_features=len(names), selected_features=names)
 
     def inverse_target(self, values: torch.Tensor) -> torch.Tensor:
         """Convert standardized predictions or targets to original units."""
@@ -47,7 +67,11 @@ class DatasetSplits:
         if np.any(groups != groups):
             raise ValueError("Group labels must not be missing")
 
-        rows = split_rows(groups, fold)
+        if type(fold) is not int or fold not in cls.available_folds:
+            raise ValueError(f"fold must be one of {cls.available_folds} for {cls.__name__}")
+        rows = cls.split_indices(groups, fold)
+        if any(len(indices) == 0 for indices in rows.values()):
+            raise ValueError("Each training, validation and test split must contain observations")
         try:
             with np.errstate(over="raise", invalid="raise", divide="raise"):
                 features, targets, target_mean, target_scale = _standardize(x, y, rows["train"])
@@ -68,6 +92,11 @@ class DatasetSplits:
             source_sha256=source_sha256,
             target_column=getattr(cls, "target", None),
         )
+
+    @classmethod
+    def split_indices(cls, groups: np.ndarray, fold: int) -> dict[str, np.ndarray]:
+        """Assign rows before computing any training statistics."""
+        return split_rows(groups, fold)
 
 
 def _standardize(

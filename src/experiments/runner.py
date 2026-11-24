@@ -10,6 +10,7 @@ from dataclasses import asdict
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import monotonic
+from typing import Literal
 
 from src.config import ModelSettings, MonitorSettings, ResourceSettings, TrackingSettings, TrainingSettings
 from src.data import CsvSpec
@@ -50,6 +51,8 @@ class ExperimentRunner:
         device: str,
         root: str | Path = DATA_DIR,
         download: bool = False,
+        feature_columns: tuple[str, ...] | None = None,
+        evaluation: Literal["test", "validation"] = "test",
         max_runs: int | None = None,
         time_budget_seconds: float | None = None,
     ) -> SeriesSummary:
@@ -57,7 +60,7 @@ class ExperimentRunner:
         series = ExperimentSeries(
             series_id=series_id, dataset=dataset, models=models, folds=folds, seeds=seeds,
             device=device, training=self.training, resources=self.resources,
-            model_settings=self.model_settings,
+            model_settings=self.model_settings, evaluation=evaluation, feature_columns=feature_columns,
         )
         if max_runs is not None and (type(max_runs) is not int or max_runs < series.size):
             raise ValueError(f"The full grid has {series.size} runs and exceeds max_runs={max_runs}")
@@ -83,9 +86,10 @@ class ExperimentRunner:
     ) -> SeriesSummary:
         series_id = series.series_id
         request = {
-            **series.model_dump(include={"dataset", "device", "resources", "training", "model_settings"}),
+            **series.model_dump(include={"dataset", "device", "resources", "training", "model_settings", "feature_columns"}),
             "root": str(project_path(root)),
             "download": download,
+            "evaluation": series.evaluation,
             "tracking": self.tracker.settings.model_dump(),
         }
         probe = self._worker({
@@ -99,6 +103,7 @@ class ExperimentRunner:
             "mgs_kan.series": series_id,
             "mgs_kan.series_key": series.key,
             "mgs_kan.protocol": protocol,
+            "mgs_kan.evaluation": series.evaluation,
         }
         trials = {trial.key: trial for trial in series.trials()}
         completed = {
@@ -111,7 +116,8 @@ class ExperimentRunner:
                 continue
             if time_budget_seconds is not None and monotonic() - start >= time_budget_seconds:
                 break
-            snapshot = TrialSnapshot(**asdict(trial))
+            # Older monitor deployments accept only the original two model names.
+            snapshot = TrialSnapshot(**asdict(trial)) if trial.model in ("mlp", "mgs_kan") else None
             session.update(trial=snapshot)
             try:
                 response = self._worker({
@@ -130,6 +136,7 @@ class ExperimentRunner:
             series_id,
             tuple(completed[k] for k in trials if k in completed),
             tuple(t for k, t in trials.items() if k not in completed),
+            series.evaluation,
         )
 
     def _worker(self, request: dict) -> dict:

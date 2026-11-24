@@ -80,9 +80,11 @@ class TrialWorker:
         device_model = self._configure_device()
         request = self.request
         dataset = request["dataset"]
+        columns = request.get("feature_columns")
         data = load_dataset(
             CsvSpec(**dataset) if isinstance(dataset, dict) else dataset,
             root=request["root"], fold=request["fold"], download=request["download"],
+            feature_columns=tuple(columns) if columns is not None else None,
         )
         identity = {
             "dataset_sha256": data.source_sha256,
@@ -117,7 +119,11 @@ class TrialWorker:
         evaluated = False
         try:
             result = trainer.fit(data)
-            trainer.evaluate(data)
+            if request.get("evaluation", "test") == "validation":
+                score = result.validation_rmse[result.best_epoch - 1]
+                client.log_metric(result.run_id, "best_val_rmse", score, synchronous=True)
+            else:
+                trainer.evaluate(data)
             evaluated = True
             self._log_resources(tracker, result.run_id, started)
             client.set_tag(result.run_id, "mgs_kan.evaluated", "true", synchronous=True)

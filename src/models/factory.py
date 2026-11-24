@@ -1,8 +1,14 @@
+from typing import Literal
+
 from torch import nn
 
 from src.config import ModelSettings
 from src.models.kan import MGS_KAN
-from src.models.mlp import MLP
+from src.models.mlp import DeepMLP, MLP
+from src.models.resnet import TabularResNet
+
+
+ModelName = Literal["mlp", "mgs_kan", "deep_mlp", "resnet"]
 
 
 def make_model(name: str, settings: ModelSettings | None = None) -> nn.Module:
@@ -10,6 +16,10 @@ def make_model(name: str, settings: ModelSettings | None = None) -> nn.Module:
         return MLP(settings)
     if name == "mgs_kan":
         return MGS_KAN(settings)
+    if name == "deep_mlp":
+        return DeepMLP(settings)
+    if name == "resnet":
+        return TabularResNet(settings)
     raise ValueError(f"Unknown model {name!r}")
 
 
