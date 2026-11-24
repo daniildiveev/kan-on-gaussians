@@ -11,10 +11,13 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import monotonic
 
-from config import ModelSettings, ResourceSettings, TrackingSettings, TrainingSettings
+from config import ModelSettings, MonitorSettings, ResourceSettings, TrackingSettings, TrainingSettings
 from data import CsvSpec
+from monitoring.client import MonitorSession
+from monitoring.events import TrialSnapshot
 from tracking import MlflowTracker
 
+from .failures import WorkerFailed, failure_reason
 from .results import SeriesSummary, TrialResult
 from .series import ExperimentSeries
 
@@ -28,11 +31,13 @@ class ExperimentRunner:
         resources: ResourceSettings | None = None,
         tracking: TrackingSettings | None = None,
         model_settings: ModelSettings | None = None,
+        monitoring: MonitorSettings | None = None,
     ):
         self.training = training or TrainingSettings()
         self.resources = resources or ResourceSettings()
         self.tracker = MlflowTracker(tracking)
         self.model_settings = model_settings or ModelSettings()
+        self.monitoring = monitoring or MonitorSettings()
 
     def run(
         self, *,
@@ -58,6 +63,24 @@ class ExperimentRunner:
         if time_budget_seconds is not None and not (0 <= time_budget_seconds < math.inf):
             raise ValueError("time_budget_seconds must be finite and nonnegative")
 
+        session = MonitorSession(self.monitoring, series_id, series.size, device)
+        try:
+            session.start()
+            summary = self._run_series(series, session, root, download, start, time_budget_seconds)
+        except KeyboardInterrupt:
+            session.finish("interrupted")
+            raise
+        except Exception as error:
+            session.finish("failed", failure_reason(error))
+            raise
+        session.finish("paused" if summary.pending else "finished")
+        return summary
+
+    def _run_series(
+        self, series: ExperimentSeries, session: MonitorSession, root: str | Path,
+        download: bool, start: float, time_budget_seconds: float | None,
+    ) -> SeriesSummary:
+        series_id = series.series_id
         request = {
             **series.model_dump(include={"dataset", "device", "resources", "training", "model_settings"}),
             "root": str(Path(root).resolve()),
@@ -80,19 +103,27 @@ class ExperimentRunner:
         completed = {
             key: TrialResult(trials[key], **values) for key, values in probe["completed"].items()
         }
+        session.update(completed=len(completed))
         print(f"{series_id}: {series.size} planned, {len(completed)} already completed", flush=True)
         for key, trial in trials.items():
             if key in completed:
                 continue
             if time_budget_seconds is not None and monotonic() - start >= time_budget_seconds:
                 break
+            snapshot = TrialSnapshot(**asdict(trial))
+            session.update(trial=snapshot)
             try:
                 response = self._worker({
                     **request, **asdict(trial), "expected": identity, "action": "trial",
                     "tags": {**tags, "mgs_kan.trial": key},
                 })
-                completed[key] = TrialResult(trial, **self.tracker.trial_scores(response["run_id"]))
+                run_id = response["run_id"]
+                session.update(trial=snapshot, run_id=run_id)
+                completed[key] = TrialResult(trial, **self.tracker.trial_scores(run_id))
+                session.update(completed=len(completed))
             except Exception as error:
+                if isinstance(error, WorkerFailed):
+                    session.update(trial=snapshot, run_id=error.run_id)
                 raise RuntimeError(f"Stopped series {series_id!r} at {key}: {error}") from error
         return SeriesSummary(
             series_id,
@@ -102,6 +133,9 @@ class ExperimentRunner:
 
     def _worker(self, request: dict) -> dict:
         env = os.environ.copy()
+        for name in list(env):
+            if name.upper().startswith("MGS_KAN_MONITOR_"):
+                del env[name]
         env["MLFLOW_ENABLE_ASYNC_LOGGING"] = "false"
         env["MLFLOW_TRACKING_URI"] = self.tracker.settings.tracking_uri
         if request["device"] == "cpu":
@@ -129,5 +163,12 @@ class ExperimentRunner:
                         proc.wait()
                 raise
             if proc.returncode:
-                raise RuntimeError(errors.strip() or f"Worker exited with status {proc.returncode}")
+                details = {}
+                if result.is_file():
+                    try:
+                        details = json.loads(result.read_text(encoding="utf-8"))
+                    except (OSError, ValueError):
+                        pass  # A killed worker may have only partially written its result.
+                raise WorkerFailed(errors.strip() or f"Worker exited with status {proc.returncode}",
+                                   details.get("reason", "worker_exit"), details.get("run_id"))
             return json.loads(result.read_text(encoding="utf-8"))

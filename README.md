@@ -284,3 +284,22 @@ across folds. R² uses only folds with defined scores.
   benchmarks, the report and its figures. See the [archive guide](archive/README.md).
 - `requirements.txt` and `requirements-study.txt` retain the historical environment pins.
 - `data/` and `results/` are ignored locations for future local inputs and outputs.
+
+## Optional series alerts
+
+`ExperimentRunner` can send progress to the heartbeat service maintained in
+`vps-metrics`. Set `MGS_KAN_MONITOR_ENDPOINT=https://<alerts-host>/v1/events`
+and `MGS_KAN_MONITOR_TOKEN` to the receiver bearer token in the training
+environment. For a local dotenv file use the same runner API:
+
+```python
+from config import MonitorSettings
+from experiments import ExperimentRunner
+
+runner = ExperimentRunner(monitoring=MonitorSettings(_env_file=".env"))
+```
+
+Registration starts before the dataset probe. Heartbeats continue every minute
+during training. If delivery fails, the notebook warns and training continues.
+For disk warnings, set `MGS_KAN_MONITOR_DISK_PATH` and
+`MGS_KAN_MONITOR_DISK_THRESHOLD_GIB` on the training machine.

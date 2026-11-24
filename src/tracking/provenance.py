@@ -11,7 +11,7 @@ class SourceVersion:
     root: Path = Path(__file__).resolve().parents[1]
 
     def tags(self) -> dict[str, str]:
-        packages = ("data", "experiments", "models", "tracking", "training")
+        packages = ("data", "experiments", "models", "monitoring", "tracking", "training")
         files = [self.root / "config.py"]
         for name in packages:
             files.extend((self.root / name).rglob("*.py"))
