@@ -3,7 +3,7 @@ import pytest
 pytest.importorskip("mlflow")
 
 
-def test_real_series_sends_progress_and_resume(tmp_path, monkeypatch):
+def test_real_series_sends_progress_and_resume(tmp_path, monkeypatch, run_log_dir):
     from src.config import MonitorSettings, TrackingSettings, TrainingSettings
     from src.data import CsvSpec
     from src.experiments import ExperimentRunner
@@ -30,6 +30,11 @@ def test_real_series_sends_progress_and_resume(tmp_path, monkeypatch):
     assert partial.pending and events[-1].kind == "paused"
     first = runner.run(**args)
     assert runner.run(**args) == first
+    logs = [path.read_text() for path in run_log_dir.glob("series-*.log")]
+    assert len(logs) == 3
+    assert any("Series paused: completed=0/1" in log for log in logs)
+    assert any(f"run_id={first.results[0].run_id} val_rmse=" in log and "val_rmse=None" not in log for log in logs)
+    assert any("reused=1 planned=1" in log and "Training started:" not in log for log in logs)
     assert events[-1].kind == "finished" and events[-1].completed == 1
     assert len({e.session_id for e in events}) == 3
     assert all(e.completed is None for e in events if e.kind == "started")

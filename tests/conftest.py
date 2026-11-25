@@ -4,6 +4,13 @@ import numpy as np
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def run_log_dir(tmp_path, monkeypatch):
+    directory = tmp_path / "logs"
+    monkeypatch.setenv("MGS_KAN_LOG_DIR", str(directory))
+    return directory
+
+
 @pytest.fixture
 def concrete_csv():
     header = ("Cement,Blast Furnace Slag,Fly Ash,Water,Superplasticizer,Coarse Aggregate,"

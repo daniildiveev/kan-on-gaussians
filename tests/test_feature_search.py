@@ -59,7 +59,7 @@ def test_projection_preserves_rows_and_scaling(tmp_path):
         torch.testing.assert_close(subset.inverse_target(y), full.inverse_target(Y))
 
 
-def test_feature_selection_through_workers_and_resume(tmp_path, monkeypatch):
+def test_feature_selection_through_workers_and_resume(tmp_path, monkeypatch, run_log_dir):
     monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
     from mlflow import MlflowClient
     from src.experiments import ExperimentRunner
@@ -90,6 +90,8 @@ def test_feature_selection_through_workers_and_resume(tmp_path, monkeypatch):
 
     def fail_second_series(self, request):
         if request["action"] == "trial" and request["feature_columns"] == ("AT",):
+            path, = run_log_dir.glob("*.log")
+            assert "Training started:" in path.read_text().splitlines()[-1]
             raise WorkerFailed("worker stopped", "cuda_oom", "failed-run")
         return worker(self, request)
 
@@ -103,6 +105,11 @@ def test_feature_selection_through_workers_and_resume(tmp_path, monkeypatch):
     assert "features-ambient" in terminal.series_id and terminal.run_id == "failed-run"
     assert terminal.first_result.model == "mlp"
     assert [point.percent for point in terminal.milestones] == [25, 50]
+    failed_log, = run_log_dir.glob("*.log")
+    original = failed_log.read_text()
+    assert "version=test datasets=power_plant device=cpu planned=4" in original
+    assert "Grid failed" in original and "Traceback" in original and "worker stopped" in original
+    assert "model=mlp fold=0 init_seed=11 shuffle_seed=101" in original
 
     cached_run_id = terminal.first_result.run_id
     client = MlflowClient(tracking_uri=tracking.tracking_uri)
@@ -111,6 +118,12 @@ def test_feature_selection_through_workers_and_resume(tmp_path, monkeypatch):
     timer = iter([100.0, 165.9, 200.0, 203.1, 300.0, 310.0])
     monkeypatch.setattr("src.experiments.search.monotonic", lambda: next(timer))
     rows = grid.run(**args)
+    resumed_log, = set(run_log_dir.glob("*.log")) - {failed_log}
+    resumed_text = resumed_log.read_text()
+    assert "Grid resume: reused=2 planned=4" in resumed_text
+    assert resumed_text.count("Training finished:") == 2
+    assert "Grid finished: completed=4/4 elapsed=65.90s" in resumed_text
+    assert failed_log.read_text() == original
     assert cached_run_id in rows.run_id.values
     terminal, = [event for event in events if event.terminal]
     assert len({event.session_id for event in events}) == 1

@@ -1,5 +1,6 @@
 """Named validation grids. One resumable ExperimentRunner series per dataset and stage."""
 
+from logging import Logger
 from math import isqrt
 from pathlib import Path
 from time import monotonic
@@ -13,6 +14,7 @@ from src.data import dataset_class
 from src.experiments.failures import failure_reason
 from src.experiments.features import FeaturePolicy, benchmark_feature_policies
 from src.experiments.runner import ExperimentRunner
+from src.experiments.run_log import run_log
 from src.experiments.series import ExperimentSeries
 from src.models.factory import ModelName
 from src.monitoring.client import MonitorSession
@@ -152,16 +154,21 @@ class ValidationGrid(BaseModel):
         session = MonitorSession(monitoring, grid_id, total, device, grid_id=grid_id, started_at=started)
         try:
             session.start()
-            runs = self._run_grid(session, version, device, tracking, resources, root, download)
-            if len(runs) != total or runs["run_id"].nunique() != total:
-                raise RuntimeError("Missing or duplicate training runs in validation grid")
+            with run_log("grid") as log:
+                log.info("Grid started: version=%s datasets=%s device=%s planned=%d",
+                         version, ",".join(self.datasets), device, total)
+                runs = self._run_grid(session, version, device, tracking, resources, root, download, log)
+                if len(runs) != total or runs["run_id"].nunique() != total:
+                    raise RuntimeError("Missing or duplicate training runs in validation grid")
+                elapsed = monotonic() - started
+                log.info("Grid finished: completed=%d/%d elapsed=%.2fs", len(runs), total, elapsed)
         except KeyboardInterrupt:
             session.finish("interrupted")
             raise
         except Exception as error:
             session.finish("failed", failure_reason(error))
             raise
-        session.finish("finished", elapsed_seconds=int(monotonic() - started))
+        session.finish("finished", elapsed_seconds=int(elapsed))
         return runs
 
     def _series_plan(self, version: str, device: str, resources: ResourceSettings):
@@ -177,22 +184,21 @@ class ValidationGrid(BaseModel):
 
     def _run_grid(
         self, session: MonitorSession, version: str, device: str, tracking: TrackingSettings,
-        resources: ResourceSettings, root: str | Path, download: bool,
+        resources: ResourceSettings, root: str | Path, download: bool, log: Logger,
     ) -> pd.DataFrame:
         rows = []
         runner = ExperimentRunner(training=self.training, resources=resources, tracking=tracking,
                                   monitoring=session.settings)
         plan = list(self._series_plan(version, device, resources))
-        cached = {}
-        if session.settings.endpoint is not None:
-            planned = {series.key: {trial.key for trial in series.trials()} for _, _, series in plan}
-            cached = runner.tracker.grid_completed_counts(planned)
+        planned = {series.key: {trial.key for trial in series.trials()} for _, _, series in plan}
+        cached = runner.tracker.grid_completed_counts(planned)
         remaining_cached = sum(cached.values())
+        log.info("Grid resume: reused=%d planned=%d", remaining_cached, session.identity["total"])
         for label, stage_name, series in plan:
             session.begin_series(series.series_id, len(rows) + remaining_cached)
             remaining_cached -= cached.get(series.key, 0)
             summary = runner.run_series(
-                series, session, root=root, download=download, completed_before=len(rows) + remaining_cached,
+                series, session, root=root, download=download, completed_before=len(rows) + remaining_cached, log=log,
             )
             for result in summary.results:
                 run = runner.tracker.client.get_run(result.run_id)

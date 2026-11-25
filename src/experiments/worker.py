@@ -120,8 +120,8 @@ class TrialWorker:
         evaluated = False
         try:
             result = trainer.fit(data)
+            score = result.validation_rmse[result.best_epoch - 1]
             if request.get("evaluation", "test") == "validation":
-                score = result.validation_rmse[result.best_epoch - 1]
                 client.log_metric(result.run_id, "best_val_rmse", score, synchronous=True)
             else:
                 trainer.evaluate(data)
@@ -144,7 +144,7 @@ class TrialWorker:
                 status = "KILLED" if isinstance(error, KeyboardInterrupt) else "FAILED"
                 client.set_terminated(run_id, status=status)
             raise
-        return {"run_id": result.run_id}
+        return {"run_id": result.run_id, "val_rmse": score}
 
 
 def _watch_parent(parent_pid: int) -> None:
