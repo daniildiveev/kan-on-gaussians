@@ -297,6 +297,13 @@ are covered by the completion summary. Elapsed time starts with this call.
 Failures and resource alerts identify the
 active series. Update the heartbeat receiver in `vps-metrics` first.
 
+Each `grid.run()` or standalone `ExperimentRunner.run()` prints the absolute
+path to a new text log under `results/logs/` in the project root. Use
+`tail -f /path/to/the/printed.log` to follow it during training. UTC entries
+record reused MLflow runs, trial seeds, best validation RMSE, elapsed time,
+progress and failure tracebacks. Set `MGS_KAN_LOG_DIR` in the root `.env`
+to choose another directory. Resuming the same version creates a new file.
+
 Open [the baseline series notebook](notebooks/baselines/run_series.ipynb).
 In the kernel environment install `python -m pip install -e '.[tracking]' pandas` from the checkout.
 The first cells locate the checkout from the notebook directory or the editable install.

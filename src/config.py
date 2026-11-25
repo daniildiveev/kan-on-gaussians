@@ -12,6 +12,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from src.paths import project_path
 
 
+class LogSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="MGS_KAN_", frozen=True, dotenv_filtering="only_existing")
+
+    log_dir: Path = Path("results/logs")
+
+    @field_validator("log_dir")
+    @classmethod
+    def resolve_log_dir(cls, path: Path) -> Path:
+        return project_path(path)
+
+
 class ModelSettings(BaseSettings):
     """Read MGS_KAN_* environment variables when constructing a model."""
 

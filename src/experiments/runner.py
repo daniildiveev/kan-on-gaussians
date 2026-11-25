@@ -1,6 +1,7 @@
 """Schedule a series and manage its disposable worker processes."""
 
 import json
+import logging
 import math
 import os
 import signal
@@ -21,6 +22,7 @@ from src.tracking import MlflowTracker
 
 from src.experiments.failures import WorkerFailed, failure_reason
 from src.experiments.results import SeriesSummary, TrialResult
+from src.experiments.run_log import run_log
 from src.experiments.series import ExperimentSeries
 
 
@@ -70,23 +72,31 @@ class ExperimentRunner:
         session = MonitorSession(self.monitoring, series_id, series.size, device)
         try:
             session.start()
-            deadline = None if time_budget_seconds is None else start + time_budget_seconds
-            summary = self.run_series(series, session, root=root, download=download, deadline=deadline)
+            with run_log("series") as log:
+                log.info("Series started: series=%s dataset=%s device=%s planned=%d",
+                         series_id, dataset, device, series.size)
+                deadline = None if time_budget_seconds is None else start + time_budget_seconds
+                summary = self.run_series(series, session, root=root, download=download, deadline=deadline, log=log)
+                status = "paused" if summary.pending else "finished"
+                log.info("Series %s: completed=%d/%d elapsed=%.2fs",
+                         status, len(summary.results), series.size, monotonic() - start)
         except KeyboardInterrupt:
             session.finish("interrupted")
             raise
         except Exception as error:
             session.finish("failed", failure_reason(error))
             raise
-        session.finish("paused" if summary.pending else "finished")
+        session.finish(status)
         return summary
 
     def run_series(
         self, series: ExperimentSeries, session: MonitorSession, *, root: str | Path,
         download: bool, completed_before: int = 0, deadline: float | None = None,
+        log: logging.Logger = logging.getLogger(__name__),
     ) -> SeriesSummary:
         """Execute a series inside the caller's monitoring session."""
         series_id = series.series_id
+        log.info("Checking MLflow history: series=%s", series_id)
         request = {
             **series.model_dump(include={"dataset", "device", "resources", "training", "model_settings", "feature_columns"}),
             "root": str(project_path(root)),
@@ -110,6 +120,7 @@ class ExperimentRunner:
             for key, values in probe["completed"].items() if key in trials
         }
         session.update(completed=completed_before + len(completed))
+        log.info("Series resume: series=%s reused=%d planned=%d", series_id, len(completed), series.size)
         print(f"{series_id}: {series.size} planned, {len(completed)} already completed", flush=True)
         for key, trial in trials.items():
             if key in completed:
@@ -119,6 +130,10 @@ class ExperimentRunner:
             # Older monitor deployments accept only the original two model names.
             snapshot = TrialSnapshot(**asdict(trial)) if trial.model in ("mlp", "mgs_kan") else None
             session.update(trial=snapshot)
+            trial_started = monotonic()
+            context = (f"series={series_id} model={trial.model} fold={trial.fold} "
+                       f"init_seed={trial.init_seed} shuffle_seed={trial.shuffle_seed}")
+            log.info("Training started: %s", context)
             try:
                 response = self._worker({
                     **request, **asdict(trial), "expected": identity, "action": "trial",
@@ -127,7 +142,12 @@ class ExperimentRunner:
                 run_id = response["run_id"]
                 session.update(trial=snapshot, run_id=run_id)
                 completed[key] = TrialResult(trial, **self.tracker.trial_scores(run_id))
-                session.record_result(completed_before + len(completed), completed[key])
+                count = completed_before + len(completed)
+                result = completed[key]
+                log.info("Training finished: %s run_id=%s val_rmse=%s elapsed=%.2fs completed=%d/%d",
+                         context, run_id, response.get("val_rmse", result.best_val_rmse),
+                         monotonic() - trial_started, count, session.identity["total"])
+                session.record_result(count, result)
             except Exception as error:
                 if isinstance(error, WorkerFailed):
                     session.update(trial=snapshot, run_id=error.run_id)
