@@ -24,6 +24,7 @@ class SeriesSummary:
     evaluation: str = "test"
     reused: int = field(default=0, compare=False)
     peak_gpu_mib: int | None = field(default=None, compare=False)
+    peak_device_mib: int | None = field(default=None, compare=False)
 
     @property
     def by_model(self) -> dict[str, dict]:
