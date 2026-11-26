@@ -29,6 +29,10 @@ class SearchStage(BaseModel):
     models: tuple[ModelName, ...]
     settings: ModelSettings
 
+    dataset_settings: dict[str, ModelSettings] = Field(default_factory=dict)
+    parameter_budget: int | None = Field(default=None, gt=0)
+    history_only: bool = False
+
     def matched_settings(self, inputs: int) -> ModelSettings:
         """Find the nearest integer MLP width for this stage's MGS-KAN parameter count."""
         if not {"mlp", "mgs_kan"}.issubset(self.models):
@@ -74,6 +78,32 @@ BENCHMARKS = (
 )
 
 
+def parameter_budget_stages() -> tuple[SearchStage, ...]:
+    """Full-feature shapes. Deep MLP has four hidden layers, ResNet two blocks."""
+    # Per dataset: MLP width, single kernels, pair kernels, deep width, residual width.
+    shapes = {
+        1000: {"airfoil": (28, 22, 11, 17, 14), "power_plant": (28, 32, 17, 17, 14)},
+        4000: {"airfoil": (59, 90, 44, 35, 30), "power_plant": (60, 132, 67, 35, 30)},
+        16000: {"airfoil": (123, 354, 178, 71, 61), "power_plant": (123, 532, 267, 71, 61)},
+    }
+    stages = [stage.model_copy(update={"history_only": True}) for stage in AIRFOIL_STAGES]
+    for budget, datasets in shapes.items():
+        dense = {}
+        residual = {}
+        for dataset, (mlp, single, pair, deep, resnet) in datasets.items():
+            dense[dataset] = ModelSettings(mlp_width=mlp, single_kernels=single, pair_kernels=pair,
+                                           deep_depth=4, deep_width=deep)
+            residual[dataset] = ModelSettings(deep_depth=2, deep_width=resnet)
+        for suffix, models, settings in [
+            ("dense", ("mlp", "mgs_kan", "deep_mlp"), dense),
+            ("resnet", ("resnet",), residual),
+        ]:
+            stages.append(SearchStage(name=f"budget-{budget}-{suffix}", models=models,
+                                      parameter_budget=budget, settings=settings["airfoil"],
+                                      dataset_settings=settings))
+    return tuple(stages)
+
+
 class ValidationGrid(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -91,9 +121,15 @@ class ValidationGrid(BaseModel):
 
     @classmethod
     def preset(
-        cls, profile: Literal["airfoil_first", "airfoil_all", "deep", "features", "benchmark_survey"],
+        cls, profile: Literal["airfoil_first", "airfoil_all", "deep", "features", "benchmark_survey", "parameter_budget"],
         *, datasets: tuple[str, ...] | None = None,
     ) -> Self:
+        if profile == "parameter_budget":
+            selected = ("airfoil", "power_plant") if datasets is None else datasets
+            if not set(selected) <= {"airfoil", "power_plant"}:
+                raise ValueError("Parameter budgets are defined for Airfoil and Power Plant")
+            return cls(datasets=selected, stages=parameter_budget_stages(), match_mlp_budget=True,
+                       reuse_matching_validation=True)
         if profile == "benchmark_survey":
             selected = BENCHMARKS if datasets is None else datasets
             return cls(datasets=selected, stages=SURVEY_STAGES, seeds=((11, 101),), match_mlp_budget=True,
@@ -132,6 +168,8 @@ class ValidationGrid(BaseModel):
             raise ValueError("Provide distinct datasets")
         if not self.feature_policies.keys() <= set(self.datasets):
             raise ValueError("Feature policies must belong to selected datasets")
+        if any(stage.history_only for stage in self.stages) and not self.reuse_matching_validation:
+            raise ValueError("History-only stages require cross-series validation matching")
         if self.reuse_matching_validation and len(self.folds) != 1:
             raise ValueError("Validation run matching requires a single fold")
         if not self.parallel_limits.keys() <= set(self.datasets):
@@ -159,7 +197,9 @@ class ValidationGrid(BaseModel):
             for label, columns in self.subsets(dataset).items():
                 for stage in self.stages:
                     settings = stage.settings
-                    if self.match_mlp_budget:
+                    if stage.dataset_settings:
+                        settings = stage.dataset_settings[dataset]
+                    elif self.match_mlp_budget:
                         settings = stage.matched_settings(len(columns or dataset_class(dataset).columns))
                     yield dataset, label, columns, stage, settings
 
@@ -238,6 +278,13 @@ class ValidationGrid(BaseModel):
         if self.reuse_matching_validation:
             matches = self._matching_history(plan, runner.tracker, root, download)
             cached = {key: len(match.completed) for key, match in matches.items()}
+            history_only = {stage.name for stage in self.stages if stage.history_only}
+            for _, name, series in plan:
+                if name in history_only and cached[series.key] != series.size:
+                    raise ValueError(
+                        f"{series.series_id}: found {cached[series.key]}/{series.size} matching compact runs. "
+                        "Check the MLflow experiment, data, device backend and checkpoint availability."
+                    )
         else:
             planned = {series.key: {trial.key for trial in series.trials()} for _, _, series in plan}
             cached = runner.tracker.grid_completed_counts(planned)
@@ -271,6 +318,8 @@ class ValidationGrid(BaseModel):
                     "seconds": run.data.metrics["duration_seconds"],
                 }
                 if match is not None:
+                    for field in ("device_model", "max_parallel_trials", "cpu_threads"):
+                        row[field] = run.data.tags.get(f"mgs_kan.{field}")
                     row["reused"] = result.trial.key in match.completed
                     row["val_r2"] = runner.tracker.validation_r2(result.run_id, result.best_epoch)
                 rows.append(row)

@@ -261,6 +261,15 @@ runs the dataset reader's fold convention is assumed unchanged. For several
 matches the newest qualifying run is used. Historical training times include
 the original run's hardware and load.
 
+For a size-matched comparison on Airfoil and Power Plant, open the
+[parameter budget notebook](notebooks/baselines/parameter_budget.ipynb).
+`ValidationGrid.preset("parameter_budget")` compares MLP, MGS-KAN, deep MLP
+and ResNet at 1,000, 4,000 and 16,000 trainable parameters. On fold 0 it
+requires 36 compact runs from MLflow and schedules up to 72 new runs.
+The notebook plots validation RMSE against actual parameter counts and
+recorded run times. The timing plot uses complete seed groups with matching
+GPU model, CPU thread count and single-worker execution.
+
 For architecture selection, open [the validation notebook](notebooks/baselines/select_models.ipynb).
 Its Pydantic grid definitions live in [search.py](src/experiments/search.py).
 These profiles use fold 0, three paired initialization/shuffle seeds, Adam,
