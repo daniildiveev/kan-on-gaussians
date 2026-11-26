@@ -4,13 +4,13 @@ from logging import Logger
 from math import isqrt
 from pathlib import Path
 from time import monotonic
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.config import ModelSettings, MonitorSettings, ResourceSettings, TrackingSettings, TrainingSettings
-from src.data import dataset_class
+from src.data import dataset_class, load_dataset
 from src.experiments.failures import failure_reason
 from src.experiments.features import FeaturePolicy, benchmark_feature_policies
 from src.experiments.runner import ExperimentRunner
@@ -19,6 +19,7 @@ from src.experiments.series import ExperimentSeries
 from src.models.factory import ModelName
 from src.monitoring.client import MonitorSession
 from src.paths import DATA_DIR
+from src.tracking.mlflow import MatchingTrials, MlflowTracker
 
 
 class SearchStage(BaseModel):
@@ -60,6 +61,13 @@ FEATURE_STAGES = (
     DEEP_STAGE,
     SearchStage(name="deep-256x6", models=("deep_mlp", "resnet"), settings=ModelSettings(deep_width=256, deep_depth=6)),
 )
+SURVEY_STAGES = tuple(
+    SearchStage(
+        name=f"survey-wave-{wave}", models=("mlp", "mgs_kan", "deep_mlp", "resnet"),
+        settings=ModelSettings(single_kernels=single, pair_kernels=pair, deep_width=width, deep_depth=depth),
+    )
+    for wave, single, pair, width, depth in [(1, 7, 4, 128, 4), (2, 16, 8, 256, 6)]
+)
 BENCHMARKS = (
     "airfoil", "power_plant", "sarcos", "gas_turbine_co", "gas_turbine_nox",
     "superconductivity", "appliances", "concrete", "wine_quality",
@@ -73,6 +81,8 @@ class ValidationGrid(BaseModel):
     stages: tuple[SearchStage, ...] = AIRFOIL_STAGES[:2]
     feature_policies: dict[str, FeaturePolicy] = Field(default_factory=dict)
     match_mlp_budget: bool = False
+    reuse_matching_validation: bool = False
+    parallel_limits: dict[str, Annotated[int, Field(ge=1, le=4)]] = Field(default_factory=dict)
     folds: tuple[int, ...] = (0,)
     seeds: tuple[tuple[int, int], ...] = ((11, 101), (22, 202), (33, 303))
     training: TrainingSettings = Field(default_factory=lambda: TrainingSettings(
@@ -81,11 +91,16 @@ class ValidationGrid(BaseModel):
 
     @classmethod
     def preset(
-        cls, profile: Literal["airfoil_first", "airfoil_all", "deep", "features"],
+        cls, profile: Literal["airfoil_first", "airfoil_all", "deep", "features", "benchmark_survey"],
         *, datasets: tuple[str, ...] | None = None,
     ) -> Self:
+        if profile == "benchmark_survey":
+            selected = BENCHMARKS if datasets is None else datasets
+            return cls(datasets=selected, stages=SURVEY_STAGES, seeds=((11, 101),), match_mlp_budget=True,
+                       reuse_matching_validation=True,
+                       parallel_limits={"superconductivity": 1} if "superconductivity" in selected else {})
         if datasets is not None and profile != "features":
-            raise ValueError("Dataset selection applies to the features profile")
+            raise ValueError("Dataset selection applies to features or benchmark_survey")
         if profile == "features":
             selected = BENCHMARKS if datasets is None else datasets
             policies = benchmark_feature_policies()
@@ -102,6 +117,12 @@ class ValidationGrid(BaseModel):
             return cls(datasets=BENCHMARKS, stages=(DEEP_STAGE,))
         raise ValueError(f"Unknown validation profile: {profile}")
 
+    def wave(self, number: Literal[1, 2]) -> Self:
+        """Select one of the two benchmark survey waves while retaining runtime settings."""
+        if self.stages != SURVEY_STAGES or number not in (1, 2):
+            raise ValueError("Choose wave 1 or 2 of the full benchmark_survey profile")
+        return self.model_copy(update={"stages": (self.stages[number - 1],)})
+
     @model_validator(mode="after")
     def validate_grid(self) -> Self:
         names = [stage.name for stage in self.stages]
@@ -111,6 +132,10 @@ class ValidationGrid(BaseModel):
             raise ValueError("Provide distinct datasets")
         if not self.feature_policies.keys() <= set(self.datasets):
             raise ValueError("Feature policies must belong to selected datasets")
+        if self.reuse_matching_validation and len(self.folds) != 1:
+            raise ValueError("Validation run matching requires a single fold")
+        if not self.parallel_limits.keys() <= set(self.datasets):
+            raise ValueError("Parallel limits must belong to selected datasets")
         for dataset in self.datasets:
             self.subsets(dataset)
             cls = dataset_class(dataset)
@@ -172,15 +197,34 @@ class ValidationGrid(BaseModel):
         return runs
 
     def _series_plan(self, version: str, device: str, resources: ResourceSettings):
-        for dataset, label, columns, stage, settings in self.plan():
+        plan = self.plan()
+        if self.reuse_matching_validation:
+            order = {stage.name: index for index, stage in enumerate(self.stages)}
+            plan = sorted(plan, key=lambda entry: order[entry[3].name])
+        for dataset, label, columns, stage, settings in plan:
+            limit = self.parallel_limits.get(dataset, resources.max_parallel_trials)
+            series_resources = resources
+            if limit < resources.max_parallel_trials:
+                series_resources = resources.model_copy(update={
+                    "max_parallel_trials": limit, "gpu_budget_mib": resources.total_gpu_budget_mib,
+                })
             suffix = f"-features-{label}" if columns is not None else ""
             series = ExperimentSeries(
                 series_id=f"{dataset}-validation-{stage.name}{suffix}-{version}",
                 dataset=dataset, feature_columns=columns, models=stage.models, folds=self.folds,
                 seeds=self.seeds, device=device, evaluation="validation", training=self.training,
-                resources=resources, model_settings=settings,
+                resources=series_resources, model_settings=settings,
             )
             yield label, stage.name, series
+
+    @staticmethod
+    def _matching_history(plan, tracker: MlflowTracker, root, download: bool) -> dict[str, MatchingTrials]:
+        matches = {}
+        for _, _, series in plan:
+            data = load_dataset(series.dataset, root=root, download=download, fold=series.folds[0],
+                                feature_columns=series.feature_columns)
+            matches[series.key] = tracker.matching_validation_trials(series, data)
+        return matches
 
     def _run_grid(
         self, session: MonitorSession, version: str, device: str, tracking: TrackingSettings,
@@ -190,8 +234,13 @@ class ValidationGrid(BaseModel):
         runner = ExperimentRunner(training=self.training, resources=resources, tracking=tracking,
                                   monitoring=session.settings)
         plan = list(self._series_plan(version, device, resources))
-        planned = {series.key: {trial.key for trial in series.trials()} for _, _, series in plan}
-        cached = runner.tracker.grid_completed_counts(planned)
+        matches = {}
+        if self.reuse_matching_validation:
+            matches = self._matching_history(plan, runner.tracker, root, download)
+            cached = {key: len(match.completed) for key, match in matches.items()}
+        else:
+            planned = {series.key: {trial.key for trial in series.trials()} for _, _, series in plan}
+            cached = runner.tracker.grid_completed_counts(planned)
         remaining_cached = sum(cached.values())
         reused = 0
         peaks = []
@@ -200,8 +249,9 @@ class ValidationGrid(BaseModel):
         for label, stage_name, series in plan:
             session.begin_series(series.series_id, len(rows) + remaining_cached)
             remaining_cached -= cached.get(series.key, 0)
+            match = matches.get(series.key)
             summary = runner.run_series(
-                series, session, root=root, download=download, completed_before=len(rows) + remaining_cached, log=log,
+                series, session, root=root, download=download, completed_before=len(rows) + remaining_cached, log=log, matching=match,
             )
             reused += summary.reused
             if summary.peak_gpu_mib is not None:
@@ -210,7 +260,7 @@ class ValidationGrid(BaseModel):
                 device_peaks.append(summary.peak_device_mib)
             for result in summary.results:
                 run = runner.tracker.client.get_run(result.run_id)
-                rows.append({
+                row = {
                     "dataset": series.dataset, "feature_set": label,
                     "feature_columns": run.data.params.get("feature_columns"),
                     "n_features": int(run.data.params["n_features"]), "stage": stage_name, "model": result.trial.model,
@@ -219,7 +269,11 @@ class ValidationGrid(BaseModel):
                     "val_rmse": result.best_val_rmse, "run_id": result.run_id,
                     "parameters": int(run.data.params["trainable_parameters"]),
                     "seconds": run.data.metrics["duration_seconds"],
-                })
+                }
+                if match is not None:
+                    row["reused"] = result.trial.key in match.completed
+                    row["val_r2"] = runner.tracker.validation_r2(result.run_id, result.best_epoch)
+                rows.append(row)
         runs = pd.DataFrame(rows)
         runs.attrs.update(reused=reused, peak_gpu_mib=max(peaks, default=None),
                           peak_device_mib=max(device_peaks, default=None))

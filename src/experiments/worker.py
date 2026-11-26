@@ -126,9 +126,11 @@ class TrialWorker:
             "source_sha256": SourceVersion().tags()["mgs_kan.source_sha256"],
         }
         if request["action"] == "probe":
+            probe = {"identity": identity, "whole_gpu_uuid": self.whole_gpu_uuid}
+            if request.get("skip_history"):
+                return probe
             tracker = MlflowTracker(self.tracking)
-            history = tracker.completed_trials(request["series_key"], evaluation=request.get("evaluation", "test"))
-            return {"identity": identity, "whole_gpu_uuid": self.whole_gpu_uuid, **history}
+            return probe | tracker.completed_trials(request["series_key"], evaluation=request.get("evaluation", "test"))
         if request["action"] != "trial":
             raise ValueError(f"Unknown series action {request['action']!r}")
         for key, value in identity.items():

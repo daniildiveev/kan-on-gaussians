@@ -1,12 +1,14 @@
 """Record training runs on an existing MLflow tracking server."""
 
 import json
+import math
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import time
+from typing import TYPE_CHECKING
 
 import torch
 from mlflow import MlflowClient
@@ -19,20 +21,13 @@ from src.data import DatasetSplits
 from src.models import parameter_count
 
 from src.tracking.provenance import SourceVersion
+from src.tracking.recipe import ValidationRecipe, optimizer_params
+
+if TYPE_CHECKING:
+    from src.experiments.series import ExperimentSeries
+
 
 _CHECKPOINT_TAG = "mgs_kan.checkpoint_file"
-
-
-def _optimizer_params(optimizer: torch.optim.Optimizer) -> dict[str, str]:
-    params = {}
-    for index, group in enumerate(optimizer.param_groups):
-        for name, value in group.items():
-            if name in ("params", "param_names"):
-                continue
-            if isinstance(value, torch.Tensor):
-                value = value.detach().tolist()
-            params[f"optimizer.{name}.{index}"] = json.dumps(value, default=str)
-    return params
 
 
 @dataclass(frozen=True)
@@ -51,6 +46,12 @@ class MlflowRun:
             path = Path(directory) / self.checkpoint_file
             path.write_bytes(content)
             self.client.log_artifact(self.run_id, str(path))
+
+
+@dataclass(frozen=True)
+class MatchingTrials:
+    dataset_sha256: str
+    completed: dict[str, dict]
 
 
 class MlflowTracker:
@@ -96,6 +97,41 @@ class MlflowTracker:
             if key not in completed and self._is_complete(run):
                 completed[key] = self._scores(run)
         return {"completed": completed, "protocols": sorted(protocols)}
+
+    def matching_validation_trials(self, series: "ExperimentSeries", data: DatasetSplits) -> MatchingTrials:
+        """Reuse the newest complete matching validation run across series in this experiment."""
+        if series.evaluation != "validation" or series.folds != (data.fold,) or not data.source_sha256:
+            raise ValueError("Cross-series reuse requires one validation fold and fingerprinted data")
+        expected = {
+            trial.key: ValidationRecipe.for_trial(series, trial, data)
+            for trial in series.trials()
+        }
+        query = ("attributes.status = 'FINISHED' AND tags.`mgs_kan.evaluation` = 'validation' "
+                 f"AND params.dataset_sha256 = '{data.source_sha256}' AND params.fold = '{data.fold}' "
+                 f"AND params.n_features = '{data.n_features}'")
+        completed = {}
+        for run in self._search_runs(query):
+            params = run.data.params
+            key = "/".join(params.get(name, "") for name in ("model", "fold", "model.init_seed", "shuffle_seed"))
+            recipe = expected.get(key)
+            if recipe is None or key in completed or not recipe.matches(params):
+                continue
+            metrics = run.data.metrics
+            epoch = metrics.get("best_epoch", math.nan)
+            if not (1 <= epoch <= series.training.epochs and int(epoch) == epoch):
+                continue
+            if not all(0 <= metrics.get(k, math.nan) < math.inf for k in ("best_val_rmse", "duration_seconds")):
+                continue
+            if self._is_complete(run):
+                completed[key] = self._scores(run)
+                if len(completed) == len(expected):
+                    break
+        return MatchingTrials(data.source_sha256, completed)
+
+    def validation_r2(self, run_id: str, epoch: int) -> float | None:
+        """Read the R² logged at the selected checkpoint's one-based epoch."""
+        history = self.client.get_metric_history(run_id, "val_r2")
+        return next((metric.value for metric in history if metric.step == epoch), None)
 
     def grid_completed_counts(self, planned: dict[str, set[str]]) -> dict[str, int]:
         """Count reusable trials across the whole grid, including later series."""
@@ -176,7 +212,7 @@ class MlflowTracker:
         if isinstance(model_settings, ModelSettings):
             for name, value in model_settings.model_dump().items():
                 params[f"model.{name}"] = value
-        params.update(_optimizer_params(optimizer))
+        params.update(optimizer_params(optimizer))
 
         filename = self.settings.checkpoint_file
         tags = {**self.run_tags, **SourceVersion().tags()}
