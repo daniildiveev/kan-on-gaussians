@@ -18,9 +18,13 @@ def test_resource_limits_from_dotenv(tmp_path, monkeypatch):
     monkeypatch.delenv("MGS_KAN_SERIES_GPU_MEMORY_FRACTION", raising=False)
     assert ResourceSettings().cpu_threads == 2
     assert ResourceSettings().gpu_memory_fraction == 0.25
-    assert ResourceSettings(_env_file=env).model_dump() == {"cpu_threads": 3, "gpu_memory_fraction": 0.5}
+    settings = ResourceSettings(_env_file=env)
+    assert (settings.cpu_threads, settings.gpu_memory_fraction) == (3, 0.5)
+    assert settings.max_parallel_trials == 1 and settings.total_gpu_budget_mib is None
+    assert ResourceSettings(max_parallel_trials=4).total_gpu_budget_mib == 4096
     assert ResourceSettings(gpu_memory_fraction=1).gpu_memory_fraction == 1
     for invalid in [
+        {"max_parallel_trials": 0}, {"max_parallel_trials": 5}, {"gpu_budget_mib": 0},
         {"cpu_threads": 0}, {"cpu_threads": 1.5}, {"gpu_memory_fraction": 0},
         {"gpu_memory_fraction": 1.1}, {"gpu_memory_fraction": float("nan")},
     ]:
@@ -162,3 +166,25 @@ def test_worker_exits_when_kernel_has_gone(request_data, tmp_path):
     assert process.returncode == 1
     assert "Traceback" not in process.stderr
     assert not result.exists()
+
+
+def test_gpu_budget_subtracts_context_and_splits_capacity(worker, request_data, monkeypatch):
+    from types import SimpleNamespace
+
+    request_data.update(device="cuda:0", resources={"max_parallel_trials": 4, "gpu_budget_mib": 4096})
+    device = torch.device("cuda:0")
+    limits = []
+    monkeypatch.setattr(worker, "_resolve_device", lambda _: device)
+    monkeypatch.setattr(torch.cuda, "set_device", lambda _: None)
+    monkeypatch.setattr(torch, "empty", lambda *a, **kw: object())
+    monkeypatch.setattr(torch.cuda, "empty_cache", lambda: None)
+    monkeypatch.setattr(torch.cuda, "reset_peak_memory_stats", lambda _: None)
+    monkeypatch.setattr(torch.cuda, "get_device_name", lambda _: "test GPU")
+    monkeypatch.setattr(torch.cuda, "get_device_properties", lambda _: SimpleNamespace(total_memory=24 * 2**30))
+    monkeypatch.setattr(torch.cuda, "set_per_process_memory_fraction", lambda fraction, dev: limits.append(fraction))
+    monkeypatch.setattr(worker, "gpu_memory_by_pid", lambda pids: {os.getpid(): 256})
+    worker.TrialWorker(request_data)._configure_device()
+    assert limits == [(1024 - 256) / (24 * 1024)]
+    monkeypatch.setattr(worker, "gpu_memory_by_pid", lambda pids: {})
+    with pytest.raises(RuntimeError, match="worker PID"):
+        worker.TrialWorker(request_data)._configure_device()

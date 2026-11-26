@@ -87,8 +87,16 @@ class ResourceSettings(BaseSettings):
         env_prefix="MGS_KAN_SERIES_", frozen=True, allow_inf_nan=False, dotenv_filtering="only_existing"
     )
 
+    max_parallel_trials: int = Field(default=1, ge=1, le=4)
+    gpu_budget_mib: PositiveInt | None = None
     cpu_threads: PositiveInt = 2
     gpu_memory_fraction: float = Field(default=0.25, gt=0, le=1)
+
+    @property
+    def total_gpu_budget_mib(self) -> int | None:
+        if self.gpu_budget_mib is not None:
+            return self.gpu_budget_mib
+        return 4096 if self.max_parallel_trials > 1 else None
 
 
 class MonitorSettings(BaseSettings):

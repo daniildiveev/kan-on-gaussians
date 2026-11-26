@@ -38,7 +38,8 @@ class FirstResult(Snapshot):
 
 
 class GridMilestone(Snapshot):
-    percent: Literal[25, 50, 75]
+    # 25 and 75 remain valid for active sessions and queued notifications from older clients.
+    percent: Literal[10, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90]
     completed: int = Field(gt=0)
     series_id: str = Field(min_length=1, max_length=160)
     elapsed_seconds: int = Field(ge=0)
@@ -49,7 +50,7 @@ class MonitorEvent(Snapshot):
     series_id: str = Field(min_length=1, max_length=160)
     grid_id: str | None = Field(default=None, min_length=1, max_length=160)
     first_result: FirstResult | None = None
-    milestones: tuple[GridMilestone, ...] | None = Field(default=None, max_length=3)
+    milestones: tuple[GridMilestone, ...] | None = Field(default=None, max_length=9)
     elapsed_seconds: int | None = Field(default=None, ge=0)
     sequence: int = Field(ge=1, le=2**63 - 1)
     kind: Kind

@@ -1,0 +1,330 @@
+[
+  {
+    "dataset": "airfoil",
+    "model": "resnet",
+    "stage": "deep-128x4",
+    "feature_set": "cols-1-2-3-4",
+    "feature_columns": [
+      "frequency",
+      "attack_angle",
+      "chord_length",
+      "free_stream_velocity"
+    ],
+    "fold": 0,
+    "architecture": {
+      "deep_width": 128,
+      "deep_depth": 4
+    },
+    "parameters": 134145,
+    "runs": [
+      {
+        "run_id": "0495b2fe00c04b72a13c0ca68e2b3ed0",
+        "init_seed": 11,
+        "shuffle_seed": 101,
+        "best_epoch": 86,
+        "val_rmse": 1.8311603037875157
+      },
+      {
+        "run_id": "46a43c898b374026af81616268d20f8b",
+        "init_seed": 22,
+        "shuffle_seed": 202,
+        "best_epoch": 78,
+        "val_rmse": 1.8647595600691942
+      },
+      {
+        "run_id": "41009ed1df7041e48d8dc65eba400345",
+        "init_seed": 33,
+        "shuffle_seed": 303,
+        "best_epoch": 70,
+        "val_rmse": 2.068276389101201
+      }
+    ]
+  },
+  {
+    "dataset": "airfoil",
+    "model": "deep_mlp",
+    "stage": "deep-256x6",
+    "feature_set": "cols-1-2-3-4",
+    "feature_columns": [
+      "frequency",
+      "attack_angle",
+      "chord_length",
+      "free_stream_velocity"
+    ],
+    "fold": 0,
+    "architecture": {
+      "deep_width": 256,
+      "deep_depth": 6
+    },
+    "parameters": 330497,
+    "runs": [
+      {
+        "run_id": "7a8e0050b0344c59ab372c9e46ba4fd9",
+        "init_seed": 11,
+        "shuffle_seed": 101,
+        "best_epoch": 86,
+        "val_rmse": 2.0800802822055533
+      },
+      {
+        "run_id": "250779e8c9bb4af9bdf4f527bfee23cd",
+        "init_seed": 22,
+        "shuffle_seed": 202,
+        "best_epoch": 72,
+        "val_rmse": 2.0743854646357383
+      },
+      {
+        "run_id": "377afde2ddcb4290871f825c4fc7b787",
+        "init_seed": 33,
+        "shuffle_seed": 303,
+        "best_epoch": 70,
+        "val_rmse": 2.1566465456760753
+      }
+    ]
+  },
+  {
+    "dataset": "airfoil",
+    "model": "mlp",
+    "stage": "stage-2",
+    "feature_set": "all",
+    "feature_columns": [
+      "frequency",
+      "attack_angle",
+      "chord_length",
+      "free_stream_velocity",
+      "displacement_thickness"
+    ],
+    "fold": 0,
+    "architecture": {
+      "mlp_width": 10
+    },
+    "parameters": 181,
+    "runs": [
+      {
+        "run_id": "b180de550ad04d34bb319b430aa94d32",
+        "init_seed": 11,
+        "shuffle_seed": 101,
+        "best_epoch": 99,
+        "val_rmse": 3.8877007156313277
+      },
+      {
+        "run_id": "7333e56d8f0742a5b27f4e24f1fdb0c2",
+        "init_seed": 22,
+        "shuffle_seed": 202,
+        "best_epoch": 100,
+        "val_rmse": 3.6775796116260815
+      },
+      {
+        "run_id": "77537586ced343fe8768c8d1acda0a9d",
+        "init_seed": 33,
+        "shuffle_seed": 303,
+        "best_epoch": 98,
+        "val_rmse": 3.7820240173227404
+      }
+    ]
+  },
+  {
+    "dataset": "airfoil",
+    "model": "mgs_kan",
+    "stage": "stage-3",
+    "feature_set": "all",
+    "feature_columns": [
+      "frequency",
+      "attack_angle",
+      "chord_length",
+      "free_stream_velocity",
+      "displacement_thickness"
+    ],
+    "fold": 0,
+    "architecture": {
+      "single_kernels": 7,
+      "pair_kernels": 4
+    },
+    "parameters": 351,
+    "runs": [
+      {
+        "run_id": "50f5b29e4582420880e0eb3199ee2cc7",
+        "init_seed": 11,
+        "shuffle_seed": 101,
+        "best_epoch": 99,
+        "val_rmse": 4.011726558738535
+      },
+      {
+        "run_id": "c31c6c300fe04c2c8e38691bf3c0289c",
+        "init_seed": 22,
+        "shuffle_seed": 202,
+        "best_epoch": 98,
+        "val_rmse": 4.107647978688237
+      },
+      {
+        "run_id": "a8f13c1b90044c3e8b6c73ceff05f8d8",
+        "init_seed": 33,
+        "shuffle_seed": 303,
+        "best_epoch": 97,
+        "val_rmse": 4.028404530541081
+      }
+    ]
+  },
+  {
+    "dataset": "power_plant",
+    "model": "resnet",
+    "stage": "deep-128x4",
+    "feature_set": "all",
+    "feature_columns": [
+      "AT",
+      "V",
+      "AP",
+      "RH"
+    ],
+    "fold": 0,
+    "architecture": {
+      "deep_width": 128,
+      "deep_depth": 4
+    },
+    "parameters": 134145,
+    "runs": [
+      {
+        "run_id": "5895e2afaace4393a8c6ec6aefb95c93",
+        "init_seed": 11,
+        "shuffle_seed": 101,
+        "best_epoch": 98,
+        "val_rmse": 3.609619532247415
+      },
+      {
+        "run_id": "0331800976ff4c52a8ea33a4a49bcacc",
+        "init_seed": 22,
+        "shuffle_seed": 202,
+        "best_epoch": 98,
+        "val_rmse": 3.595662552500786
+      },
+      {
+        "run_id": "b132c5d84e8f4a7998e52a7d7809c617",
+        "init_seed": 33,
+        "shuffle_seed": 303,
+        "best_epoch": 93,
+        "val_rmse": 3.5459713087947975
+      }
+    ]
+  },
+  {
+    "dataset": "power_plant",
+    "model": "deep_mlp",
+    "stage": "deep-128x4",
+    "feature_set": "all",
+    "feature_columns": [
+      "AT",
+      "V",
+      "AP",
+      "RH"
+    ],
+    "fold": 0,
+    "architecture": {
+      "deep_width": 128,
+      "deep_depth": 4
+    },
+    "parameters": 50305,
+    "runs": [
+      {
+        "run_id": "cd9538566fbf43a8a5e90bfcd3b71b93",
+        "init_seed": 11,
+        "shuffle_seed": 101,
+        "best_epoch": 93,
+        "val_rmse": 3.704094874318805
+      },
+      {
+        "run_id": "40feaf40643147f5b518b9a591fc6316",
+        "init_seed": 22,
+        "shuffle_seed": 202,
+        "best_epoch": 99,
+        "val_rmse": 3.7048084174213893
+      },
+      {
+        "run_id": "327f88e87aeb4b8189245effd00cbd61",
+        "init_seed": 33,
+        "shuffle_seed": 303,
+        "best_epoch": 96,
+        "val_rmse": 3.688636802016417
+      }
+    ]
+  },
+  {
+    "dataset": "power_plant",
+    "model": "mlp",
+    "stage": "stage-3",
+    "feature_set": "all",
+    "feature_columns": [
+      "AT",
+      "V",
+      "AP",
+      "RH"
+    ],
+    "fold": 0,
+    "architecture": {
+      "mlp_width": 12
+    },
+    "parameters": 229,
+    "runs": [
+      {
+        "run_id": "7ce02ca6fbef4024a2f220e51f6a81ea",
+        "init_seed": 11,
+        "shuffle_seed": 101,
+        "best_epoch": 99,
+        "val_rmse": 4.049387884705314
+      },
+      {
+        "run_id": "af9e9f69e9b04d4bb9b07936809b2038",
+        "init_seed": 22,
+        "shuffle_seed": 202,
+        "best_epoch": 100,
+        "val_rmse": 4.075039680266055
+      },
+      {
+        "run_id": "761de71646064210b723eabd0f4f8b6e",
+        "init_seed": 33,
+        "shuffle_seed": 303,
+        "best_epoch": 96,
+        "val_rmse": 4.1283156581164855
+      }
+    ]
+  },
+  {
+    "dataset": "power_plant",
+    "model": "mgs_kan",
+    "stage": "stage-2",
+    "feature_set": "all",
+    "feature_columns": [
+      "AT",
+      "V",
+      "AP",
+      "RH"
+    ],
+    "fold": 0,
+    "architecture": {
+      "single_kernels": 4,
+      "pair_kernels": 2
+    },
+    "parameters": 125,
+    "runs": [
+      {
+        "run_id": "034e27ffc70142d391c177ffa5740937",
+        "init_seed": 11,
+        "shuffle_seed": 101,
+        "best_epoch": 99,
+        "val_rmse": 4.078789009808696
+      },
+      {
+        "run_id": "d3f7f5d540034d63a459d7c2c12a46c0",
+        "init_seed": 22,
+        "shuffle_seed": 202,
+        "best_epoch": 100,
+        "val_rmse": 4.112197110701241
+      },
+      {
+        "run_id": "786d729b6b854254b7f250e8dbfc3426",
+        "init_seed": 33,
+        "shuffle_seed": 303,
+        "best_epoch": 96,
+        "val_rmse": 4.093030151292721
+      }
+    ]
+  }
+]

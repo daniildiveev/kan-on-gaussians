@@ -162,3 +162,16 @@ def test_validation_deep_runs_resume_without_test_metrics(local_series):
     assert runner.run(**args) == summary
     test_series = runner.run(**{**args, "evaluation": "test"}, time_budget_seconds=0)
     assert not test_series.results and len(test_series.pending) == 2
+
+
+def test_four_models_share_fold_and_resume(local_series):
+    runner, args = local_series
+    runner.resources = ResourceSettings(max_parallel_trials=4, cpu_threads=1)
+    args.update(models=["mlp", "mgs_kan", "deep_mlp", "resnet"], evaluation="validation")
+    first = runner.run(**args)
+    assert first.reused == 0 and len(first.results) == 4
+    assert len({result.run_id for result in first.results}) == 4
+    assert [result.trial.model for result in first.results] == args["models"]
+    assert all(result.best_val_rmse is not None and result.test_rmse is None for result in first.results)
+    resumed = runner.run(**args)
+    assert resumed == first and resumed.reused == 4

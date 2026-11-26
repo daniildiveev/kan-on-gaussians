@@ -8,6 +8,7 @@ import signal
 import subprocess
 import sys
 from dataclasses import asdict
+from functools import partial
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import monotonic
@@ -21,9 +22,22 @@ from src.paths import DATA_DIR, PROJECT_ROOT, project_path
 from src.tracking import MlflowTracker
 
 from src.experiments.failures import WorkerFailed, failure_reason
+from src.experiments.pool import TrialPool
 from src.experiments.results import SeriesSummary, TrialResult
 from src.experiments.run_log import run_log
-from src.experiments.series import ExperimentSeries
+from src.experiments.series import ExperimentSeries, Trial
+
+
+class TrialFailed(RuntimeError):
+    def __init__(self, series_id, trial, error):
+        super().__init__(f"Stopped series {series_id!r} at {trial.key}: {error}")
+        self.trial = trial
+        self.run_id = error.run_id if isinstance(error, WorkerFailed) else None
+
+
+def _snapshot(trial: Trial):
+    # Older monitor deployments accept only the two compact model names.
+    return TrialSnapshot(**asdict(trial)) if trial.model in ("mlp", "mgs_kan") else None
 
 
 class ExperimentRunner:
@@ -122,44 +136,57 @@ class ExperimentRunner:
         session.update(completed=completed_before + len(completed))
         log.info("Series resume: series=%s reused=%d planned=%d", series_id, len(completed), series.size)
         print(f"{series_id}: {series.size} planned, {len(completed)} already completed", flush=True)
-        for key, trial in trials.items():
-            if key in completed:
-                continue
-            if deadline is not None and monotonic() >= deadline:
-                break
-            # Older monitor deployments accept only the original two model names.
-            snapshot = TrialSnapshot(**asdict(trial)) if trial.model in ("mlp", "mgs_kan") else None
-            session.update(trial=snapshot)
-            trial_started = monotonic()
-            context = (f"series={series_id} model={trial.model} fold={trial.fold} "
-                       f"init_seed={trial.init_seed} shuffle_seed={trial.shuffle_seed}")
-            log.info("Training started: %s", context)
-            try:
-                response = self._worker({
-                    **request, **asdict(trial), "expected": identity, "action": "trial",
-                    "tags": {**tags, "mgs_kan.trial": key},
-                })
-                run_id = response["run_id"]
-                session.update(trial=snapshot, run_id=run_id)
-                completed[key] = TrialResult(trial, **self.tracker.trial_scores(run_id))
-                count = completed_before + len(completed)
-                result = completed[key]
-                log.info("Training finished: %s run_id=%s val_rmse=%s elapsed=%.2fs completed=%d/%d",
-                         context, run_id, response.get("val_rmse", result.best_val_rmse),
-                         monotonic() - trial_started, count, session.identity["total"])
-                session.record_result(count, result)
-            except Exception as error:
-                if isinstance(error, WorkerFailed):
-                    session.update(trial=snapshot, run_id=error.run_id)
-                raise RuntimeError(f"Stopped series {series_id!r} at {key}: {error}") from error
+        resources = series.resources
+        budget = resources.total_gpu_budget_mib if series.device.startswith("cuda:") else None
+        pending = [trial for key, trial in trials.items() if key not in completed]
+        reused = len(completed)
+        request.update(action="trial", expected=identity, tags=tags)
+        pool = TrialPool(resources.max_parallel_trials, budget)
+        execute = partial(self._execute_trial, request=request, pool=pool, session=session, log=log)
+        try:
+            with pool:
+                for trial, (result, details) in pool.results(pending, execute, deadline):
+                    completed[trial.key] = result
+                    count = completed_before + len(completed)
+                    log.info("Training finished: %s completed=%d/%d", details, count, session.identity["total"])
+                    session.record_result(count, result)
+        except TrialFailed as error:
+            session.update(trial=_snapshot(error.trial), run_id=error.run_id)
+            raise
+        if pool.peak_mib is not None:
+            log.info("Sampled peak GPU memory for training workers: %d MiB", pool.peak_mib)
         return SeriesSummary(
             series_id,
             tuple(completed[k] for k in trials if k in completed),
             tuple(t for k, t in trials.items() if k not in completed),
-            series.evaluation,
+            series.evaluation, reused=reused, peak_gpu_mib=pool.peak_mib,
         )
 
-    def _worker(self, request: dict) -> dict:
+    def _execute_trial(self, trial: Trial, *, request: dict, pool: TrialPool, session: MonitorSession,
+                       log: logging.Logger):
+        tags = request["tags"]
+        series_id = tags["mgs_kan.series"]
+        context = (f"series={series_id} model={trial.model} fold={trial.fold} "
+                   f"init_seed={trial.init_seed} shuffle_seed={trial.shuffle_seed}")
+        if pool.slots == 1:
+            session.update(trial=_snapshot(trial))
+        started = monotonic()
+        log.info("Training started: %s", context)
+        job = {**request, **asdict(trial), "tags": {**tags, "mgs_kan.trial": trial.key}}
+        try:
+            if pool.slots == 1 and pool.budget_mib is None:
+                response = self._worker(job)
+            else:
+                response = self._worker(job, pool=pool)
+            scores = self.tracker.trial_scores(response["run_id"])
+        except Exception as error:
+            raise TrialFailed(series_id, trial, error) from error
+        result = TrialResult(trial, **scores)
+        val_rmse = response.get("val_rmse", result.best_val_rmse)
+        details = f"{context} run_id={result.run_id} val_rmse={val_rmse} elapsed={monotonic() - started:.2f}s"
+        return result, details
+
+    def _worker(self, request: dict, *, pool: TrialPool | None = None) -> dict:
         env = os.environ.copy()
         # A notebook can import a checkout that is not installed in the kernel environment.
         pythonpath = env.get("PYTHONPATH")
@@ -183,7 +210,11 @@ class ExperimentRunner:
             )
             try:
                 payload = {**request, "parent_pid": os.getpid()}
-                _, errors = proc.communicate(json.dumps(payload) + "\n")
+                message = json.dumps(payload) + "\n"
+                if pool is None:
+                    _, errors = proc.communicate(message)
+                else:
+                    _, errors = pool.communicate(proc, message)
             except BaseException:
                 if proc.poll() is None:
                     proc.send_signal(signal.SIGINT)
