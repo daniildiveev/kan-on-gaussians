@@ -354,12 +354,15 @@ Set `max_parallel_trials` from 1 (default) to 4 in `ResourceSettings`.
 Scheduling is bounded within each series. Open a single notebook per series ID.
 
 On CUDA, parallel series share a default 4096 MiB budget. Set `gpu_budget_mib`
-to override it or enable measurement for a sequential comparison. Each worker
-deducts its initial CUDA context from its share before limiting the PyTorch
-allocator. The runner samples combined driver memory for its worker PIDs with
-`nvidia-smi` and stops the series on an observed overrun. Short peaks between
-samples are possible. This requires the server to expose worker PIDs and their
-memory through `nvidia-smi`. Interrupting the notebook stops the active workers.
+to override it or enable measurement for a sequential comparison. When worker
+PIDs are visible in `nvidia-smi`, each worker subtracts its CUDA context from
+its allocator share and the runner samples the combined usage of those PIDs.
+If Jupyter hides a worker PID, the worker resolves the selected CUDA device's
+UUID and the runner monitors total memory on that card, including other users.
+In this mode each worker limits its allocator to its share of the remaining
+budget. The runner stops the series on an observed overrun. Short peaks between
+samples are possible. The notebook reports worker and whole-card peaks in
+separate columns. Interrupting the notebook stops the active workers.
 
 `max_runs` caps the full grid. `time_budget_seconds` lets a running trial
 finish and defers the next one. Errors stop the series and identify the

@@ -168,7 +168,7 @@ def test_worker_exits_when_kernel_has_gone(request_data, tmp_path):
     assert not result.exists()
 
 
-def test_gpu_budget_subtracts_context_and_splits_capacity(worker, request_data, monkeypatch):
+def test_gpu_budget_subtracts_context_and_splits_capacity(worker, request_data, monkeypatch, tmp_path):
     from types import SimpleNamespace
 
     request_data.update(device="cuda:0", resources={"max_parallel_trials": 4, "gpu_budget_mib": 4096})
@@ -186,5 +186,16 @@ def test_gpu_budget_subtracts_context_and_splits_capacity(worker, request_data, 
     worker.TrialWorker(request_data)._configure_device()
     assert limits == [(1024 - 256) / (24 * 1024)]
     monkeypatch.setattr(worker, "gpu_memory_by_pid", lambda pids: {})
-    with pytest.raises(RuntimeError, match="worker PID"):
-        worker.TrialWorker(request_data)._configure_device()
+    uuid = "GPU-0c5969a5-8446-d137-5d5c-aee5273f4349"
+    monkeypatch.setattr(worker, "selected_gpu_uuid", lambda device: uuid)
+    readings = {uuid: 3072}  # Includes the other users of this card.
+    monkeypatch.setattr(worker, "device_memory_mib", readings.__getitem__)
+    request_data["fallback_dir"] = str(tmp_path)
+    hidden = worker.TrialWorker(request_data)
+    hidden._configure_device()
+    assert hidden.whole_gpu_uuid == uuid
+    assert (tmp_path / uuid).is_file()
+    assert limits[-1] == (4096 - 3072) / 4 / (24 * 1024)
+    readings[uuid] = 4200
+    with pytest.raises(RuntimeError, match="4200 MiB"):
+        hidden._configure_device()

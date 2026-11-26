@@ -195,6 +195,7 @@ class ValidationGrid(BaseModel):
         remaining_cached = sum(cached.values())
         reused = 0
         peaks = []
+        device_peaks = []
         log.info("Grid resume: reused=%d planned=%d", remaining_cached, session.identity["total"])
         for label, stage_name, series in plan:
             session.begin_series(series.series_id, len(rows) + remaining_cached)
@@ -205,6 +206,8 @@ class ValidationGrid(BaseModel):
             reused += summary.reused
             if summary.peak_gpu_mib is not None:
                 peaks.append(summary.peak_gpu_mib)
+            if summary.peak_device_mib is not None:
+                device_peaks.append(summary.peak_device_mib)
             for result in summary.results:
                 run = runner.tracker.client.get_run(result.run_id)
                 rows.append({
@@ -218,7 +221,8 @@ class ValidationGrid(BaseModel):
                     "seconds": run.data.metrics["duration_seconds"],
                 })
         runs = pd.DataFrame(rows)
-        runs.attrs.update(reused=reused, peak_gpu_mib=max(peaks, default=None))
+        runs.attrs.update(reused=reused, peak_gpu_mib=max(peaks, default=None),
+                          peak_device_mib=max(device_peaks, default=None))
         return runs
 
     def compare(self, rows: pd.DataFrame) -> pd.DataFrame:

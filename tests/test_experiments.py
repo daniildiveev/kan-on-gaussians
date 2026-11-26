@@ -175,3 +175,43 @@ def test_four_models_share_fold_and_resume(local_series):
     assert all(result.best_val_rmse is not None and result.test_rmse is None for result in first.results)
     resumed = runner.run(**args)
     assert resumed == first and resumed.reused == 4
+
+
+def test_four_models_use_probe_gpu_uuid_when_host_pids_are_hidden(local_series, monkeypatch):
+    from threading import Barrier, Event
+
+    runner, args = local_series
+    models = ["mlp", "mgs_kan", "deep_mlp", "resnet"]
+    runner.resources = ResourceSettings(max_parallel_trials=4, gpu_budget_mib=4096)
+    card = "GPU-0c5969a5-8446-d137-5d5c-aee5273f4349"
+    ready = Barrier(4, timeout=5)
+    measured = Event()
+
+    def sample(uuid):
+        assert uuid == card
+        measured.set()
+        return 3600
+
+    def fake_worker(request, *, pool=None):
+        if request["action"] == "probe":
+            return {"identity": {}, "completed": {}, "whole_gpu_uuid": card}
+        assert request["whole_gpu_uuid"] == pool.whole_gpu_uuid == card
+        process = Mock(pid=433131 + models.index(request["model"]))
+
+        def communicate(*args, **kwargs):
+            ready.wait()
+            assert measured.wait(5)
+
+        process.communicate.side_effect = communicate
+        pool.communicate(process, "payload")
+        return {"run_id": request["model"]}
+
+    def scores(run_id):
+        return dict(run_id=run_id, best_epoch=1, test_rmse=None, test_r2=None, best_val_rmse=1.2)
+
+    monkeypatch.setattr(runner, "_worker", fake_worker)
+    monkeypatch.setattr(runner.tracker, "trial_scores", scores)
+    monkeypatch.setattr("src.experiments.pool.device_memory_mib", sample)
+    summary = runner.run(**{**args, "models": models, "device": "cuda:1", "evaluation": "validation"})
+    assert len(summary.results) == 4
+    assert summary.peak_gpu_mib is None and summary.peak_device_mib == 3600

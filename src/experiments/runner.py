@@ -141,7 +141,7 @@ class ExperimentRunner:
         pending = [trial for key, trial in trials.items() if key not in completed]
         reused = len(completed)
         request.update(action="trial", expected=identity, tags=tags)
-        pool = TrialPool(resources.max_parallel_trials, budget)
+        pool = TrialPool(resources.max_parallel_trials, budget, probe.get("whole_gpu_uuid"))
         execute = partial(self._execute_trial, request=request, pool=pool, session=session, log=log)
         try:
             with pool:
@@ -153,13 +153,15 @@ class ExperimentRunner:
         except TrialFailed as error:
             session.update(trial=_snapshot(error.trial), run_id=error.run_id)
             raise
+        if pool.peak_device_mib is not None:
+            log.info("Sampled peak for entire GPU %s: %d MiB", pool.whole_gpu_uuid, pool.peak_device_mib)
         if pool.peak_mib is not None:
             log.info("Sampled peak GPU memory for training workers: %d MiB", pool.peak_mib)
         return SeriesSummary(
             series_id,
             tuple(completed[k] for k in trials if k in completed),
             tuple(t for k, t in trials.items() if k not in completed),
-            series.evaluation, reused=reused, peak_gpu_mib=pool.peak_mib,
+            series.evaluation, reused=reused, peak_gpu_mib=pool.peak_mib, peak_device_mib=pool.peak_device_mib,
         )
 
     def _execute_trial(self, trial: Trial, *, request: dict, pool: TrialPool, session: MonitorSession,
@@ -173,6 +175,10 @@ class ExperimentRunner:
         started = monotonic()
         log.info("Training started: %s", context)
         job = {**request, **asdict(trial), "tags": {**tags, "mgs_kan.trial": trial.key}}
+        if pool.whole_gpu_uuid is not None:
+            job["whole_gpu_uuid"] = pool.whole_gpu_uuid
+        elif pool.fallback_dir is not None:
+            job["fallback_dir"] = str(pool.fallback_dir)
         try:
             if pool.slots == 1 and pool.budget_mib is None:
                 response = self._worker(job)

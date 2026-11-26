@@ -20,7 +20,7 @@ from src.tracking.provenance import SourceVersion
 from src.training import Trainer
 from src.training.trainer import _resolve_device
 from src.experiments.failures import WorkerFailed, failure_reason
-from src.experiments.pool import gpu_memory_by_pid
+from src.experiments.gpu_memory import device_memory_mib, gpu_memory_by_pid, selected_gpu_uuid
 
 
 def _cpu_model() -> str:
@@ -56,6 +56,7 @@ class TrialWorker:
         self.tracking = TrackingSettings(**request["tracking"])
         self.run_id = None
         self.allocator_fraction = None
+        self.whole_gpu_uuid = request.get("whole_gpu_uuid")
 
     def _configure_device(self) -> str:
         torch.set_num_threads(self.resources.cpu_threads)
@@ -73,18 +74,33 @@ class TrialWorker:
             probe = torch.empty(1, device=device)
             del probe
             torch.cuda.empty_cache()
-            used = gpu_memory_by_pid({os.getpid()}).get(os.getpid())
-            if used is None:
-                raise RuntimeError("nvidia-smi must expose the worker PID and its memory usage")
-            allowance = budget // self.resources.max_parallel_trials - used
-            if allowance <= 0:
-                raise WorkerFailed("CUDA contexts exhaust the shared GPU memory budget", "cuda_oom", None)
+            allowance = self._allocator_budget_mib(device, budget)
             total_bytes = torch.cuda.get_device_properties(device).total_memory
             fraction = min(fraction, allowance * 2**20 / total_bytes)
         torch.cuda.set_per_process_memory_fraction(fraction, device)
         self.allocator_fraction = fraction
         torch.cuda.reset_peak_memory_stats(device)
         return torch.cuda.get_device_name(device)
+
+    def _allocator_budget_mib(self, device: torch.device, budget: int) -> int:
+        slots = self.resources.max_parallel_trials
+        if self.whole_gpu_uuid is None:
+            used = gpu_memory_by_pid({os.getpid()}).get(os.getpid())
+            if used is not None:
+                allowance = budget // slots - used
+                if allowance <= 0:
+                    raise WorkerFailed("CUDA contexts exhaust the shared GPU memory budget", "cuda_oom", None)
+                return allowance
+            self.whole_gpu_uuid = selected_gpu_uuid(device)
+            if directory := self.request.get("fallback_dir"):
+                (Path(directory) / self.whole_gpu_uuid).touch()
+
+        used = device_memory_mib(self.whole_gpu_uuid)
+        allowance = (budget - used) // slots
+        if allowance <= 0:
+            raise WorkerFailed(f"GPU {self.whole_gpu_uuid}: {used} MiB in use, budget {budget} MiB",
+                               "cuda_oom", None)
+        return allowance
 
     def _log_resources(self, tracker: MlflowTracker, run_id: str, started: float) -> None:
         client = tracker.client
@@ -112,7 +128,7 @@ class TrialWorker:
         if request["action"] == "probe":
             tracker = MlflowTracker(self.tracking)
             history = tracker.completed_trials(request["series_key"], evaluation=request.get("evaluation", "test"))
-            return {"identity": identity, **history}
+            return {"identity": identity, "whole_gpu_uuid": self.whole_gpu_uuid, **history}
         if request["action"] != "trial":
             raise ValueError(f"Unknown series action {request['action']!r}")
         for key, value in identity.items():
