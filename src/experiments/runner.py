@@ -20,6 +20,7 @@ from src.monitoring.client import MonitorSession
 from src.monitoring.events import TrialSnapshot
 from src.paths import DATA_DIR, PROJECT_ROOT, project_path
 from src.tracking import MlflowTracker
+from src.tracking.mlflow import MatchingTrials
 
 from src.experiments.failures import WorkerFailed, failure_reason
 from src.experiments.pool import TrialPool
@@ -107,6 +108,7 @@ class ExperimentRunner:
         self, series: ExperimentSeries, session: MonitorSession, *, root: str | Path,
         download: bool, completed_before: int = 0, deadline: float | None = None,
         log: logging.Logger = logging.getLogger(__name__),
+        matching: MatchingTrials | None = None,
     ) -> SeriesSummary:
         """Execute a series inside the caller's monitoring session."""
         series_id = series.series_id
@@ -118,21 +120,28 @@ class ExperimentRunner:
             "evaluation": series.evaluation,
             "tracking": self.tracker.settings.model_dump(),
         }
+        trials = {trial.key: trial for trial in series.trials()}
+        if matching is not None and matching.completed.keys() == trials.keys():
+            results = tuple(TrialResult(trial, **matching.completed[key]) for key, trial in trials.items())
+            session.update(completed=completed_before + len(results))
+            log.info("Series fully reused: series=%s completed=%d", series_id, len(results))
+            return SeriesSummary(series_id, results, (), series.evaluation, reused=len(results))
+
         probe = self._worker({
             **request, "action": "probe", "fold": series.folds[0], "series_key": series.key,
+            "skip_history": matching is not None,
         })
         identity = probe["identity"]
+        if matching is not None and matching.dataset_sha256 != identity["dataset_sha256"]:
+            raise RuntimeError(f"Dataset changed after validation history lookup: {series_id}")
         tags = {
             "mgs_kan.series": series_id,
             "mgs_kan.series_key": series.key,
             "mgs_kan.protocol": series.protocol(identity),
             "mgs_kan.evaluation": series.evaluation,
         }
-        trials = {trial.key: trial for trial in series.trials()}
-        completed = {
-            key: TrialResult(trials[key], **values)
-            for key, values in probe["completed"].items() if key in trials
-        }
+        history = matching.completed if matching is not None else probe["completed"]
+        completed = {key: TrialResult(trials[key], **values) for key, values in history.items() if key in trials}
         session.update(completed=completed_before + len(completed))
         log.info("Series resume: series=%s reused=%d planned=%d", series_id, len(completed), series.size)
         print(f"{series_id}: {series.size} planned, {len(completed)} already completed", flush=True)

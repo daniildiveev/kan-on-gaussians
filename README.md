@@ -244,6 +244,23 @@ A subsequent `fit` starts a new run and a new epoch count from the loaded state.
 
 ### Run a fold and seed series from Jupyter
 
+For a validation survey across every benchmark, open
+[the two-wave notebook](notebooks/baselines/benchmark_survey.ipynb).
+`ValidationGrid.preset("benchmark_survey").wave(1)` and `.wave(2)` each
+schedule 36 combinations: nine regression tasks, four families, all inputs,
+fold 0, seed pair (11, 101). Each wave writes its run IDs and per-task
+validation RMSE, R² at the best epoch, parameter counts and training times to
+`results/benchmark-survey/<VERSION>/` before the next wave starts.
+Superconductivity uses one worker at a time under the same GPU memory budget.
+
+The survey searches the configured MLflow experiment across series names.
+Reuse requires a finished, evaluated validation run with its checkpoint and
+matching source data hash, target, fold, ordered inputs, seeds, model-specific
+settings, Adam options, batch size, epoch count and device backend. For old
+runs the dataset reader's fold convention is assumed unchanged. For several
+matches the newest qualifying run is used. Historical training times include
+the original run's hardware and load.
+
 For architecture selection, open [the validation notebook](notebooks/baselines/select_models.ipynb).
 Its Pydantic grid definitions live in [search.py](src/experiments/search.py).
 These profiles use fold 0, three paired initialization/shuffle seeds, Adam,
