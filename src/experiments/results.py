@@ -1,6 +1,6 @@
 """Individual attempt results and fold-weighted summaries."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from statistics import fmean
 
 from src.experiments.series import Trial
@@ -22,6 +22,8 @@ class SeriesSummary:
     results: tuple[TrialResult, ...]
     pending: tuple[Trial, ...]
     evaluation: str = "test"
+    reused: int = field(default=0, compare=False)
+    peak_gpu_mib: int | None = field(default=None, compare=False)
 
     @property
     def by_model(self) -> dict[str, dict]:

@@ -19,7 +19,8 @@ from src.tracking import MlflowTracker
 from src.tracking.provenance import SourceVersion
 from src.training import Trainer
 from src.training.trainer import _resolve_device
-from src.experiments.failures import failure_reason
+from src.experiments.failures import WorkerFailed, failure_reason
+from src.experiments.pool import gpu_memory_by_pid
 
 
 def _cpu_model() -> str:
@@ -54,6 +55,7 @@ class TrialWorker:
         self.device = request["device"]
         self.tracking = TrackingSettings(**request["tracking"])
         self.run_id = None
+        self.allocator_fraction = None
 
     def _configure_device(self) -> str:
         torch.set_num_threads(self.resources.cpu_threads)
@@ -64,7 +66,23 @@ class TrialWorker:
             raise ValueError("Choose cpu or an explicit visible cuda:N device")
         device = _resolve_device(self.device)
         torch.cuda.set_device(device)
-        torch.cuda.set_per_process_memory_fraction(self.resources.gpu_memory_fraction, device)
+        fraction = self.resources.gpu_memory_fraction
+        budget = self.resources.total_gpu_budget_mib
+        if budget is not None:
+            # Initialize this process's CUDA context before measuring driver overhead.
+            probe = torch.empty(1, device=device)
+            del probe
+            torch.cuda.empty_cache()
+            used = gpu_memory_by_pid({os.getpid()}).get(os.getpid())
+            if used is None:
+                raise RuntimeError("nvidia-smi must expose the worker PID and its memory usage")
+            allowance = budget // self.resources.max_parallel_trials - used
+            if allowance <= 0:
+                raise WorkerFailed("CUDA contexts exhaust the shared GPU memory budget", "cuda_oom", None)
+            total_bytes = torch.cuda.get_device_properties(device).total_memory
+            fraction = min(fraction, allowance * 2**20 / total_bytes)
+        torch.cuda.set_per_process_memory_fraction(fraction, device)
+        self.allocator_fraction = fraction
         torch.cuda.reset_peak_memory_stats(device)
         return torch.cuda.get_device_name(device)
 
@@ -113,7 +131,12 @@ class TrialWorker:
             **request["tags"], "mgs_kan.device": self.device, "mgs_kan.device_model": device_model,
             "mgs_kan.cpu_threads": str(self.resources.cpu_threads),
             "mgs_kan.gpu_memory_fraction": str(self.resources.gpu_memory_fraction),
+            "mgs_kan.max_parallel_trials": str(self.resources.max_parallel_trials),
         }
+        if self.allocator_fraction is not None:
+            tags["mgs_kan.allocator_fraction"] = str(self.allocator_fraction)
+            if self.resources.total_gpu_budget_mib is not None:
+                tags["mgs_kan.gpu_budget_mib"] = str(self.resources.total_gpu_budget_mib)
         tracker = MlflowTracker(self.tracking, run_tags=tags)
         trainer = Trainer(model, TrainingSettings(**training_options), tracker=tracker)
         client = tracker.client

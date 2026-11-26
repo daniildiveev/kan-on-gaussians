@@ -65,18 +65,19 @@ class MonitorSession:
                 )
                 self._wake.set()
             total = self.identity["total"]
-            for percent in (25, 50, 75):
-                threshold = (percent * total + 99) // 100
-                if completed != threshold or completed == total:
-                    continue
-                milestones = self._progress.get("milestones", ())
-                if any(point.percent == percent for point in milestones):
-                    continue
-                point = GridMilestone(
-                    percent=percent, completed=completed, series_id=self.identity["series_id"],
-                    elapsed_seconds=int(monotonic() - self._started_at),
-                )
-                self._progress["milestones"] = (*milestones, point)
+            step = completed * 10 // total
+            previous_step = (completed - 1) * 10 // total
+            if completed == total or step == previous_step:
+                return
+            percent = 10 * step
+            milestones = self._progress.get("milestones", ())
+            if any(point.percent == percent for point in milestones):
+                return
+            point = GridMilestone(
+                percent=percent, completed=completed, series_id=self.identity["series_id"],
+                elapsed_seconds=int(monotonic() - self._started_at),
+            )
+            self._progress["milestones"] = (*milestones, point)
 
     def _snapshot(self, kind: Kind, reason: Reason | None = None) -> MonitorEvent:
         disk = None

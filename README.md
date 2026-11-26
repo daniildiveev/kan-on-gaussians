@@ -290,8 +290,9 @@ the same MLflow experiment after a code update. Choose a new version when you
 change the data, model, or training settings and need fresh results.
 Each dataset and stage has its own series ID.
 Each call to `grid.run()` uses one heartbeat session. Telegram announces the start,
-the first newly trained run with its validation RMSE, progress at 25%, 50% and
-75%, and completion. Counts include reusable MLflow runs across the grid.
+the first newly trained run with its validation RMSE, progress every 10% from
+10% through 90%, and completion. If one run crosses several thresholds, only
+the highest is announced. Counts include reusable MLflow runs across the grid.
 Resuming skips thresholds already reached. Thresholds reached on the final run
 are covered by the completion summary. Elapsed time starts with this call.
 Failures and resource alerts identify the
@@ -344,6 +345,21 @@ a local test. CUDA indices follow the kernel's existing visible-device order.
 Set `MGS_KAN_SERIES_CPU_THREADS` (default 2) and
 `MGS_KAN_SERIES_GPU_MEMORY_FRACTION` (default 0.25) to limit worker threads
 and the CUDA allocator. Other users can consume memory on the same GPU.
+
+[Parallel Power Plant notebook](notebooks/baselines/parallel_power_plant.ipynb)
+runs MLP, MGS-KAN, Deep MLP and ResNet on the manually selected GPU. All four
+start on fold 0 with the same seed pair. The queue then fills available slots
+with the next pending trials. Each process has one CPU thread in this profile.
+Set `max_parallel_trials` from 1 (default) to 4 in `ResourceSettings`.
+Scheduling is bounded within each series. Open a single notebook per series ID.
+
+On CUDA, parallel series share a default 4096 MiB budget. Set `gpu_budget_mib`
+to override it or enable measurement for a sequential comparison. Each worker
+deducts its initial CUDA context from its share before limiting the PyTorch
+allocator. The runner samples combined driver memory for its worker PIDs with
+`nvidia-smi` and stops the series on an observed overrun. Short peaks between
+samples are possible. This requires the server to expose worker PIDs and their
+memory through `nvidia-smi`. Interrupting the notebook stops the active workers.
 
 `max_runs` caps the full grid. `time_budget_seconds` lets a running trial
 finish and defers the next one. Errors stop the series and identify the

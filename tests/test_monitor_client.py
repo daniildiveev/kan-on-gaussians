@@ -3,6 +3,25 @@ from threading import Event
 import pytest
 
 
+def test_grid_reports_each_tenth_once_and_leaves_last_run_to_finish():
+    from src.config import MonitorSettings
+    from src.experiments.results import TrialResult
+    from src.experiments.series import Trial
+    from src.monitoring.client import MonitorSession
+
+    settings = MonitorSettings(endpoint="https://monitor.test/v1/events", token="test")
+    session = MonitorSession(settings, "stage", 23, "cpu", grid_id="grid")
+    result = TrialResult(Trial("mlp", 0, 1, 2), "fresh", 1, None, None, 0.25)
+    for completed in range(1, 24):
+        session.record_result(completed, result)
+    session.record_result(23, result)
+    event = session._snapshot("heartbeat")
+    assert [(p.percent, p.completed) for p in event.milestones] == [
+        (10, 3), (20, 5), (30, 7), (40, 10), (50, 12),
+        (60, 14), (70, 17), (80, 19), (90, 21),
+    ]
+
+
 def test_first_fresh_result_wakes_grid_monitor_before_next_heartbeat(monkeypatch):
     from src.config import MonitorSettings
     from src.experiments.results import TrialResult

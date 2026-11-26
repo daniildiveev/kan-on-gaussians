@@ -104,7 +104,7 @@ def test_feature_selection_through_workers_and_resume(tmp_path, monkeypatch, run
     assert terminal.completed == 2 and terminal.total == 4
     assert "features-ambient" in terminal.series_id and terminal.run_id == "failed-run"
     assert terminal.first_result.model == "mlp"
-    assert [point.percent for point in terminal.milestones] == [25, 50]
+    assert [point.percent for point in terminal.milestones] == [20, 50]
     failed_log, = run_log_dir.glob("*.log")
     original = failed_log.read_text()
     assert "version=test datasets=power_plant device=cpu planned=4" in original
@@ -129,7 +129,7 @@ def test_feature_selection_through_workers_and_resume(tmp_path, monkeypatch, run
     assert len({event.session_id for event in events}) == 1
     assert terminal.kind == "finished" and terminal.grid_id == "power_plant · test"
     assert terminal.completed == terminal.total == 4 and terminal.elapsed_seconds == 65
-    assert [point.percent for point in terminal.milestones] == [75]
+    assert [point.percent for point in terminal.milestones] == [70]
     first_new = rows[rows.feature_set == "ambient"].iloc[0]
     assert terminal.first_result.run_id == first_new.run_id
     assert terminal.first_result.val_rmse == first_new.val_rmse
@@ -155,5 +155,5 @@ def test_feature_selection_through_workers_and_resume(tmp_path, monkeypatch, run
     events.clear()
     grid.run(**args)
     final = events[-1]
-    assert final.completed == 4 and [point.percent for point in final.milestones] == [75]
+    assert final.completed == 4 and [point.percent for point in final.milestones] == [70]
     assert "features-all" in final.milestones[0].series_id

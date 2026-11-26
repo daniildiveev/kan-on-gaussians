@@ -193,6 +193,8 @@ class ValidationGrid(BaseModel):
         planned = {series.key: {trial.key for trial in series.trials()} for _, _, series in plan}
         cached = runner.tracker.grid_completed_counts(planned)
         remaining_cached = sum(cached.values())
+        reused = 0
+        peaks = []
         log.info("Grid resume: reused=%d planned=%d", remaining_cached, session.identity["total"])
         for label, stage_name, series in plan:
             session.begin_series(series.series_id, len(rows) + remaining_cached)
@@ -200,6 +202,9 @@ class ValidationGrid(BaseModel):
             summary = runner.run_series(
                 series, session, root=root, download=download, completed_before=len(rows) + remaining_cached, log=log,
             )
+            reused += summary.reused
+            if summary.peak_gpu_mib is not None:
+                peaks.append(summary.peak_gpu_mib)
             for result in summary.results:
                 run = runner.tracker.client.get_run(result.run_id)
                 rows.append({
@@ -212,7 +217,9 @@ class ValidationGrid(BaseModel):
                     "parameters": int(run.data.params["trainable_parameters"]),
                     "seconds": run.data.metrics["duration_seconds"],
                 })
-        return pd.DataFrame(rows)
+        runs = pd.DataFrame(rows)
+        runs.attrs.update(reused=reused, peak_gpu_mib=max(peaks, default=None))
+        return runs
 
     def compare(self, rows: pd.DataFrame) -> pd.DataFrame:
         """Select within each family and outer fold, comparing the same seed pairs."""
