@@ -30,7 +30,7 @@ def _active_model_params(model: str, settings: ModelSettings) -> dict:
     # Earlier grids logged all families' settings together, even those unused by this model.
     if model == "mlp":
         fields = {"mlp_width"}
-    elif model == "mgs_kan":
+    elif model in ("mgs_kan", "hypergraph_mgs_kan"):
         fields = {name for name in ModelSettings.model_fields if name.startswith(("single_", "pair_"))}
     else:
         fields = {"deep_width", "deep_depth"}

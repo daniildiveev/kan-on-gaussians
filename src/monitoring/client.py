@@ -59,7 +59,9 @@ class MonitorSession:
             if self.identity["grid_id"] is None or self.settings.endpoint is None:
                 return
             score = result.best_val_rmse
-            if "first_result" not in self._progress and score is not None and 0 <= score < math.inf:
+            # Deployed monitors accept first-result details for the original four models.
+            supports_detail = result.trial.model in ("mlp", "mgs_kan", "deep_mlp", "resnet")
+            if supports_detail and "first_result" not in self._progress and score is not None and 0 <= score < math.inf:
                 self._progress["first_result"] = FirstResult(
                     model=result.trial.model, fold=result.trial.fold, run_id=result.run_id, val_rmse=score,
                 )

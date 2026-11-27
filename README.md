@@ -281,6 +281,12 @@ validation runs for two further seed pairs. It compares both parameter budgets
 on the pooled 2014–2015 test period and exports per-run RMSE and R², paired RMSE
 differences and the four target-by-budget summaries.
 
+The [Gas Turbine hypergraph notebook](notebooks/baselines/gas_turbine_hypergraph.ipynb)
+uses the twelve second-wave MLP and pairwise checkpoints for all three seed
+pairs. It trains up to six third-order models with 2,173 parameters each.
+It exports paired test RMSE for 2014–2015, validation ablation scores for
+every feature triple and top-five counts across seeds for each emissions target.
+
 For architecture selection, open [the validation notebook](notebooks/baselines/select_models.ipynb).
 Its Pydantic grid definitions live in [search.py](src/experiments/search.py).
 These profiles use fold 0, three paired initialization/shuffle seeds, Adam,
