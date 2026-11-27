@@ -275,6 +275,12 @@ tests the three compact MGS-KAN / MLP pairs on folds 1–4 with three matched se
 pairs. It evaluates the best validation epoch of each run and writes per-run test
 scores, 36 paired RMSE differences and a three-by-four table of fold means.
 
+The [Gas Turbine held-out notebook](notebooks/baselines/gas_turbine_heldout.ipynb)
+restores the eight original CO and NOx survey checkpoints and adds up to 16
+validation runs for two further seed pairs. It compares both parameter budgets
+on the pooled 2014–2015 test period and exports per-run RMSE and R², paired RMSE
+differences and the four target-by-budget summaries.
+
 For architecture selection, open [the validation notebook](notebooks/baselines/select_models.ipynb).
 Its Pydantic grid definitions live in [search.py](src/experiments/search.py).
 These profiles use fold 0, three paired initialization/shuffle seeds, Adam,
