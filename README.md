@@ -270,6 +270,11 @@ The notebook plots validation RMSE against actual parameter counts and
 recorded run times. The timing plot uses complete seed groups with matching
 GPU model, CPU thread count and single-worker execution.
 
+The [compact Power Plant notebook](notebooks/baselines/power_plant_compact_folds.ipynb)
+tests the three compact MGS-KAN / MLP pairs on folds 1–4 with three matched seed
+pairs. It evaluates the best validation epoch of each run and writes per-run test
+scores, 36 paired RMSE differences and a three-by-four table of fold means.
+
 For architecture selection, open [the validation notebook](notebooks/baselines/select_models.ipynb).
 Its Pydantic grid definitions live in [search.py](src/experiments/search.py).
 These profiles use fold 0, three paired initialization/shuffle seeds, Adam,
