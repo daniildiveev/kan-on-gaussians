@@ -198,6 +198,7 @@ class MlflowTracker:
             "dataset": data.source_file or type(data).__name__,
             "dataset_sha256": data.source_sha256,
             "target_column": data.target_column,
+            "input_protocol": data.input_protocol,
             "fold": data.fold,
             "n_features": data.n_features,
             "feature_columns": json.dumps(data.selected_features or data.columns) if data.columns else None,

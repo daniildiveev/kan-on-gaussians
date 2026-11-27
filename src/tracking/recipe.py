@@ -28,8 +28,10 @@ def optimizer_params(optimizer: torch.optim.Optimizer) -> dict[str, str]:
 
 def _active_model_params(model: str, settings: ModelSettings) -> dict:
     # Earlier grids logged all families' settings together, even those unused by this model.
-    if model == "mlp":
+    if model in ("mlp", "mlp_window6"):
         fields = {"mlp_width"}
+    elif model == "gru_window6":
+        fields = {"deep_width"}
     elif model in ("mgs_kan", "hypergraph_mgs_kan"):
         fields = {name for name in ModelSettings.model_fields if name.startswith(("single_", "pair_"))}
     else:
@@ -52,6 +54,7 @@ class ValidationRecipe:
         adam = torch.optim.Adam(model.parameters(), lr=series.training.learning_rate)
         params = {
             "dataset": data.source_file, "dataset_sha256": data.source_sha256, "target_column": data.target_column,
+            "input_protocol": data.input_protocol,
             "fold": str(trial.fold), "n_features": str(data.n_features), "epochs": str(series.training.epochs),
             "batch_size": str(series.training.batch_size), "optimizer": "Adam", "model": trial.model,
             "seed": str(trial.shuffle_seed), "shuffle_seed": str(trial.shuffle_seed),
