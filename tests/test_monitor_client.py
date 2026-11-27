@@ -153,3 +153,18 @@ def test_stalled_transport_cannot_hold_up_training_or_shutdown(monkeypatch):
     finally:
         release.set()
         thread.join(2)
+
+
+def test_hypergraph_grid_reports_milestones_supported_by_existing_monitor():
+    from src.config import MonitorSettings
+    from src.experiments.results import TrialResult
+    from src.experiments.series import Trial
+    from src.monitoring.client import MonitorSession
+
+    settings = MonitorSettings(endpoint="https://monitor.test/v1/events", token="test")
+    session = MonitorSession(settings, "gas", 18, "cpu", grid_id="hypergraph")
+    result = TrialResult(Trial("hypergraph_mgs_kan", 0, 11, 101), "fresh", 1, None, None, 0.25)
+    session.record_result(13, result)
+    event = session._snapshot("heartbeat")
+    assert event.completed == 13 and event.first_result is None
+    assert event.milestones[-1].percent == 70
