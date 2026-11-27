@@ -5,7 +5,9 @@ from src.data.appliances import AppliancesDataset
 from src.data.base import TabularDataset
 from src.data.concrete import ConcreteDataset
 from src.data.csv_dataset import CsvDataset, CsvSpec
-from src.data.gas_turbine import GasTurbineCODataset, GasTurbineNOxDataset
+from src.data.gas_turbine import (
+    GasTurbineCODataset, GasTurbineCOWindows, GasTurbineNOxDataset, GasTurbineNOxWindows,
+)
 from src.data.power_plant import PowerPlantDataset
 from src.data.sarcos import SarcosDataset
 from src.data.superconductivity import SuperconductivityDataset
@@ -19,6 +21,8 @@ _DATASETS: dict[str, type[TabularDataset]] = {
     "sarcos": SarcosDataset,
     "gas_turbine_co": GasTurbineCODataset,
     "gas_turbine_nox": GasTurbineNOxDataset,
+    "gas_turbine_co_window6": GasTurbineCOWindows,
+    "gas_turbine_nox_window6": GasTurbineNOxWindows,
     "superconductivity": SuperconductivityDataset,
     "appliances": AppliancesDataset,
     "concrete": ConcreteDataset,

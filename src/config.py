@@ -12,6 +12,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from src.paths import project_path
 
 
+GAS_TURBINE_WINDOW_SIZE = 6
+
+
 class LogSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="MGS_KAN_", frozen=True, dotenv_filtering="only_existing")
 

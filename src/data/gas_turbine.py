@@ -1,11 +1,15 @@
 """Hourly gas turbine emissions, evaluated on the last two calendar years."""
 
+from dataclasses import replace
 from pathlib import Path
+from typing import Self
 from zipfile import ZipFile
 
 import numpy as np
 import pandas as pd
+from torch.utils.data import TensorDataset
 
+from src.config import GAS_TURBINE_WINDOW_SIZE
 from src.data.base import Table, TabularDataset
 
 
@@ -44,4 +48,41 @@ class GasTurbineCODataset(GasTurbineDataset):
 
 
 class GasTurbineNOxDataset(GasTurbineDataset):
+    target = "NOX"
+
+
+class GasTurbineWindowDataset(GasTurbineDataset):
+    """Six ordered observations from one year, labelled at the final observation."""
+
+    input_protocol = "within-year-window6-stride1-endpoint"
+
+    @classmethod
+    def _from_arrays(cls, x, y, groups, fold, **source) -> Self:
+        data = super()._from_arrays(x, y, groups, fold, **source)
+        partitions = {}
+        for name, indices in cls.split_indices(groups, fold).items():
+            features, targets = getattr(data, name).tensors
+            # read() emits each year's rows consecutively, in source-file order.
+            years = groups[indices]
+            length = GAS_TURBINE_WINDOW_SIZE
+            starts = np.arange(max(0, len(years) - length + 1))
+            ends = starts + length - 1
+            within_year = years[starts] == years[ends]
+            if not within_year.any():
+                raise ValueError(f"No complete within-year windows in {name}")
+            windows = features.unfold(0, length, 1).transpose(1, 2)
+            partitions[name] = TensorDataset(windows[starts[within_year]], targets[ends[within_year]])
+        return replace(data, **partitions)
+
+    def test_endpoints(self) -> TensorDataset:
+        """Present the same held-out examples to a single-observation model."""
+        windows, targets = self.test.tensors
+        return TensorDataset(windows[:, -1], targets)
+
+
+class GasTurbineCOWindows(GasTurbineWindowDataset):
+    target = "CO"
+
+
+class GasTurbineNOxWindows(GasTurbineWindowDataset):
     target = "NOX"

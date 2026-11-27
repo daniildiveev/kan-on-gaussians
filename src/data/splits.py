@@ -9,6 +9,7 @@ from torch.utils.data import TensorDataset
 @dataclass(frozen=True)
 class DatasetSplits:
     available_folds: ClassVar[tuple[int, ...]] = (0, 1, 2, 3, 4)
+    input_protocol: ClassVar[str | None] = None
     columns: ClassVar[tuple[str, ...]] = ()
     train: TensorDataset
     val: TensorDataset
@@ -34,7 +35,7 @@ class DatasetSplits:
 
         def project(partition: TensorDataset) -> TensorDataset:
             features, target = partition.tensors
-            return TensorDataset(features[:, indices], target)
+            return TensorDataset(features[..., indices], target)
 
         return replace(self, train=project(self.train), val=project(self.val), test=project(self.test),
                        n_features=len(names), selected_features=names)

@@ -287,6 +287,12 @@ pairs. It trains up to six third-order models with 2,173 parameters each.
 It exports paired test RMSE for 2014–2015, validation ablation scores for
 every feature triple and top-five counts across seeds for each emissions target.
 
+The [Gas Turbine window notebook](notebooks/baselines/gas_turbine_windows.ipynb)
+compares a GRU and an MLP on six consecutive sensor observations within each year.
+It restores the single-observation MLP and hypergraph checkpoints from MLflow,
+trains up to twelve window models, and exports test RMSE and seed-paired differences
+on identical 2014–2015 endpoints.
+
 For architecture selection, open [the validation notebook](notebooks/baselines/select_models.ipynb).
 Its Pydantic grid definitions live in [search.py](src/experiments/search.py).
 These profiles use fold 0, three paired initialization/shuffle seeds, Adam,
